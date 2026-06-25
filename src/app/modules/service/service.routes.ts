@@ -2,12 +2,14 @@ import express from 'express';
 import { serviceController } from './service.controller';
 import { userRole } from '../user/user.constant';
 import { auth, serviceAuth } from '../../middlewares/auth';
+import { fileUploader } from '../../helper/fileUploder';
 
 const router = express.Router();
 
 router.post(
   '/register-service',
   serviceAuth(userRole['find care'], userRole['find job']),
+  fileUploader.upload.single('profileImage'),
   serviceController.registerServiceController,
 );
 

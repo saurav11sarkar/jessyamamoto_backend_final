@@ -2,12 +2,13 @@ import User from '../user/user.model';
 import Category from '../category/category.model';
 import Subscription from '../subscription/subscription.model';
 import Payment from '../payment/payment.model';
-import Service from '../service/service.model';
+import Service from './service.model';
 import AppError from '../../error/appError';
 import Stripe from 'stripe';
 import config from '../../config';
 import mongoose from 'mongoose';
 import pagination, { IOption } from '../../helper/pagenation';
+import { fileUploader } from '../../helper/fileUploder';
 
 const stripe = new Stripe(config.stripe.secretKey!);
 
@@ -48,6 +49,7 @@ const getAvailableDays = (available?: string | string[]) => {
 const registerServiceAndSubscription = async (
   payload: any,
   userId?: string,
+  profileImageFile?: Express.Multer.File,
 ) => {
   /* ================= GET OR CREATE USER ================= */
   let user = null;
@@ -55,6 +57,32 @@ const registerServiceAndSubscription = async (
   if (userId) {
     user = await User.findById(userId);
     if (!user) throw new AppError(404, 'User not found');
+    if (payload.gender) {
+      user.gender = payload.gender;
+    }
+    if (payload.country || payload.countery) {
+      user.countery = payload.countery || payload.country;
+    }
+    if (payload.city) {
+      user.city = payload.city;
+    }
+    if (payload.bio) {
+      user.bio = payload.bio;
+    }
+    if (profileImageFile) {
+      const { url } = await fileUploader.uploadToCloudinary(profileImageFile);
+      user.profileImage = url;
+    }
+    if (
+      payload.gender ||
+      payload.country ||
+      payload.countery ||
+      payload.city ||
+      payload.bio ||
+      profileImageFile
+    ) {
+      await user.save();
+    }
   } else {
     // First-time user
     if (!payload.email || !payload.firstName || !payload.role) {
@@ -66,11 +94,23 @@ const registerServiceAndSubscription = async (
 
     user = await User.findOne({ email: payload.email });
     if (!user) {
+      let profileImage = '';
+      if (profileImageFile) {
+        const uploaded = await fileUploader.uploadToCloudinary(profileImageFile);
+        profileImage = uploaded.url;
+      } else {
+        const idx = Math.floor(Math.random() * 100);
+        profileImage = `https://avatar.iran.liara.run/public/${idx}.png`;
+      }
+
       user = await User.create({
         email: payload.email,
         password: payload.password,
         firstName: payload.firstName,
         lastName: payload.lastName || '',
+        gender: payload.gender || '',
+        bio: payload.bio || '',
+        profileImage,
         role: payload.role,
         countery: payload.countery || payload.country || '',
         city: payload.city || '',
@@ -156,10 +196,15 @@ const registerServiceAndSubscription = async (
 
   /** Account + service without paid subscription (no Stripe). */
   if (!effectiveSubscriptionId) {
+    const existingServiceWithGender = await Service.findOne({ userId: user._id })
+      .select('gender')
+      .lean();
     const gender =
       (payload.gender && String(payload.gender).trim()) ||
       ((user as { gender?: string }).gender &&
         String((user as { gender?: string }).gender).trim()) ||
+      (existingServiceWithGender?.gender &&
+        String(existingServiceWithGender.gender).trim()) ||
       '';
     if (!gender) {
       throw new AppError(400, 'gender is required');
@@ -205,6 +250,12 @@ const registerServiceAndSubscription = async (
             category: categoryObjectId,
             service: created!._id,
           },
+          gender,
+          ...(payload.countery || payload.country
+            ? { countery: payload.countery || payload.country }
+            : {}),
+          ...(payload.city ? { city: payload.city } : {}),
+          ...(payload.bio ? { bio: payload.bio } : {}),
           ...(loc ? { location: loc } : {}),
         },
         { session: dbSession },

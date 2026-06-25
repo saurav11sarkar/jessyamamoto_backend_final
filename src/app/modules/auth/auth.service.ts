@@ -11,13 +11,25 @@ import bcrypt from 'bcryptjs';
 import createOtpTemplate from '../../utils/createOtpTemplate';
 import { userRole } from '../user/user.constant';
 import { getMyServicesPaidCategoryIds } from '../user/user.service';
+import { fileUploader } from '../../helper/fileUploder';
 
-const registerUser = async (payload: Partial<IUser> & { referralCode?: string; onboardingSource?: string }) => {
+const registerUser = async (
+  payload: Partial<IUser> & {
+    referralCode?: string;
+    onboardingSource?: string;
+  },
+  profileImageFile?: Express.Multer.File,
+) => {
   const exist = await User.findOne({ email: payload.email });
   if (exist) throw new AppError(400, 'User already exists');
 
-  const idx = Math.floor(Math.random() * 100);
-  payload.profileImage = `https://avatar.iran.liara.run/public/${idx}.png`;
+  if (profileImageFile) {
+    const { url } = await fileUploader.uploadToCloudinary(profileImageFile);
+    payload.profileImage = url;
+  } else {
+    const idx = Math.floor(Math.random() * 100);
+    payload.profileImage = `https://avatar.iran.liara.run/public/${idx}.png`;
+  }
 
   if (payload.referralCode) {
     const ambassadorUser = await User.findOne({

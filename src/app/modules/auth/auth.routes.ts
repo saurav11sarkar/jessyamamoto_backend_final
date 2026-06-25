@@ -1,12 +1,17 @@
 import express from 'express';
 import { authController } from './auth.controller';
+import { fileUploader } from '../../helper/fileUploder';
 
 import { userRole } from '../user/user.constant';
 import { auth } from '../../middlewares/auth';
 
 const router = express.Router();
 
-router.post('/register', authController.registerUser);
+router.post(
+  '/register',
+  fileUploader.upload.single('profileImage'),
+  authController.registerUser,
+);
 router.post('/login', authController.loginUser);
 router.post('/refresh-token', authController.refreshToken);
 router.post('/forgot-password', authController.forgotPassword);

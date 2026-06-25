@@ -7,9 +7,17 @@ import sendResponse from '../../utils/sendResponse';
 
 const registerServiceController = catchAsync(async (req: Request, res: Response) => {
   const userId = req.user?.id || null;
+  const payload = {
+    ...req.body,
+    days:
+      typeof req.body.days === 'string'
+        ? JSON.parse(req.body.days)
+        : req.body.days,
+  };
   const result = await serviceService.registerServiceAndSubscription(
-    req.body,
+    payload,
     userId,
+    req.file,
   );
 
   res.status(200).json({

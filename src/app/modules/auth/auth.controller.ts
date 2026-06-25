@@ -16,6 +16,7 @@ const registerUser = catchAsync(async (req, res) => {
     neighborhoods,
     gender,
     NIDNumber,
+    bio,
     referralCode,
     onboardingSource,
   } = req.body;
@@ -30,9 +31,10 @@ const registerUser = catchAsync(async (req, res) => {
     neighborhoods: neighborhoods || '',
     gender: gender || '',
     NIDNumber: NIDNumber || '',
+    bio: bio || '',
     referralCode: referralCode || '',
     onboardingSource: onboardingSource || '',
-  } as any);
+  } as any, req.file);
 
   sendResponse(res, {
     statusCode: 201,
