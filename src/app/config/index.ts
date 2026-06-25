@@ -4,34 +4,27 @@ import dotenv from 'dotenv';
 dotenv.config({ path: path.join(process.cwd(), '.env') });
 
 const frontendUrl = process.env.FRONTEND_URL || '';
-const isLocalFrontend =
-  frontendUrl.includes('localhost') ||
-  frontendUrl.includes('127.0.0.1') ||
-  frontendUrl.trim() === '';
+const useMobileDeepLinks = frontendUrl.trim() === '';
 
-/**
- * Stripe Checkout redirect targets. On a phone, localhost:3000 never loads.
- * When FRONTEND_URL is local/empty, use app deep links (register in Flutter + manifest).
- */
 const stripeCheckoutUrls = {
   successUrl:
     process.env.STRIPE_CHECKOUT_SUCCESS_URL ||
-    (isLocalFrontend
+    (useMobileDeepLinks
       ? 'jessyamamoto://payment-success'
       : `${frontendUrl}/payment-success`),
   cancelUrl:
     process.env.STRIPE_CHECKOUT_CANCEL_URL ||
-    (isLocalFrontend
+    (useMobileDeepLinks
       ? 'jessyamamoto://payment-cancel'
       : `${frontendUrl}/payment-cancel`),
   bookingSuccessUrl:
     process.env.STRIPE_BOOKING_SUCCESS_URL ||
-    (isLocalFrontend
+    (useMobileDeepLinks
       ? 'jessyamamoto://booking-success?session_id={CHECKOUT_SESSION_ID}'
       : `${frontendUrl}/booking-success?session_id={CHECKOUT_SESSION_ID}`),
   bookingCancelUrl:
     process.env.STRIPE_BOOKING_CANCEL_URL ||
-    (isLocalFrontend
+    (useMobileDeepLinks
       ? 'jessyamamoto://booking-cancel'
       : `${frontendUrl}/booking-cancel`),
 };
