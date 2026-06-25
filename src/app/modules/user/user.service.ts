@@ -1,0 +1,397 @@
+import mongoose from 'mongoose';
+import AppError from '../../error/appError';
+import { fileUploader } from '../../helper/fileUploder';
+import pagination, { IOption } from '../../helper/pagenation';
+import Payment from '../payment/payment.model';
+import Service from '../service/service.model';
+import { IUser } from './user.interface';
+import User from './user.model';
+import { normalizeUserLanguages } from './user.language.util';
+import { getLocationFromZip } from '../../helper/geocode';
+
+/**
+ * Category ids for home "My Services": categories the user registered (user.category),
+ * with fallback to distinct Service.categoryId for that user.
+ */
+export const getMyServicesPaidCategoryIds = async (
+  userId: string,
+): Promise<string[]> => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return [];
+  }
+  const uid = new mongoose.Types.ObjectId(userId);
+
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+
+  const pushCat = (raw: string | undefined | null) => {
+    const id = raw?.toString().trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    ordered.push(id);
+  };
+
+  const user = await User.findById(uid).select('category').lean();
+  if (user?.category?.length) {
+    for (const c of user.category) {
+      pushCat(c?.toString());
+    }
+    return ordered;
+  }
+
+  const services = await Service.find({ userId: uid })
+    .select('categoryId createdAt')
+    .sort({ createdAt: 1 })
+    .lean();
+
+  for (const s of services) {
+    pushCat(s.categoryId?.toString());
+  }
+
+  return ordered;
+};
+
+const createUser = async (payload: IUser) => {
+  const user = await User.findOne({ email: payload.email });
+  if (user) {
+    throw new AppError(400, 'User already exists');
+  }
+  const idx = Math.floor(Math.random() * 100);
+  const avatarUrl = `https://avatar.iran.liara.run/public/${idx}.png`;
+  payload.profileImage = avatarUrl;
+  const result = await User.create(payload);
+
+  if (!result) {
+    throw new AppError(400, 'Failed to create user');
+  }
+  return result;
+};
+
+const getAllUser = async (params: any, options: IOption) => {
+  const { page, limit, skip, sortBy, sortOrder } = pagination(options);
+  const { searchTerm, minHourRate, maxHourRate, ...filterData } = params;
+
+  const andCondition: any[] = [];
+  const userSearchableFields = [
+    'firstName',
+    'lastName',
+    'bio',
+    'phone',
+    'status',
+    'gender',
+    'email',
+    'role',
+  ];
+
+  if (searchTerm as any) {
+    andCondition.push({
+      $or: userSearchableFields.map((field) => ({
+        [field]: { $regex: searchTerm, $options: 'i' },
+      })),
+    });
+  }
+
+  if (Object.keys(filterData).length) {
+    andCondition.push({
+      $and: Object.entries(filterData).map(([field, value]) => ({
+        [field]: value,
+      })),
+    });
+  }
+
+  if (minHourRate || maxHourRate) {
+    const hourRateCondition: any = {};
+
+    if (minHourRate) {
+      hourRateCondition.$gte = Number(minHourRate);
+    }
+
+    if (maxHourRate) {
+      hourRateCondition.$lte = Number(maxHourRate);
+    }
+
+    andCondition.push({
+      hourRate: hourRateCondition,
+    });
+  }
+
+  const whereCondition = andCondition.length > 0 ? { $and: andCondition } : {};
+
+  const result = await User.find(whereCondition)
+    .skip(skip)
+    .limit(limit)
+    .sort({ [sortBy]: sortOrder } as any)
+    .populate('service')
+    .populate('category');
+
+  if (!result) {
+    throw new AppError(404, 'Users not found');
+  }
+
+  const total = await User.countDocuments(whereCondition);
+
+  return {
+    data: result,
+    meta: {
+      total,
+      page,
+      limit,
+    },
+  };
+};
+
+const getUserById = async (id: string) => {
+  const result = await User.findById(id)
+    .populate('category')
+    .populate('service');
+  if (!result) {
+    throw new AppError(404, 'User not found');
+  }
+  return result;
+};
+
+const updateUserById = async (
+  id: string,
+  payload: IUser,
+  file?: Express.Multer.File[],
+) => {
+  const user = await User.findById(id);
+  if (!user) {
+    throw new AppError(404, 'User not found');
+  }
+
+  if (file?.length) {
+    const { url } = await fileUploader.uploadToCloudinary(file[0]!);
+    payload.profileImage = url;
+  }
+
+  const result = await User.findByIdAndUpdate(id, payload, { new: true });
+  if (!result) {
+    throw new AppError(404, 'User not found');
+  }
+  return result;
+};
+
+const deleteUserById = async (id: string) => {
+  const result = await User.findByIdAndDelete(id);
+  if (!result) {
+    throw new AppError(404, 'User not found');
+  }
+  return result;
+};
+
+const profile = async (id: string) => {
+  const result = await User.findById(id)
+    .populate('totalBooking')
+    .populate('givenReviewRatting');
+  if (!result) {
+    throw new AppError(404, 'User not found');
+  }
+  return {
+    ...result.toObject(),
+    myServicesPaidCategoryIds: await getMyServicesPaidCategoryIds(id),
+  };
+};
+
+const MAX_PROFILE_PHOTOS = 6;
+
+const normalizeProfileGalary = (user: {
+  galary?: string[];
+  profileImage?: string | string[];
+}): string[] => {
+  const urls: string[] = [];
+  const push = (raw?: string | null) => {
+    const u = raw?.trim();
+    if (u && !urls.includes(u)) urls.push(u);
+  };
+  const profile = user.profileImage;
+  if (typeof profile === 'string') {
+    push(profile);
+  } else if (Array.isArray(profile)) {
+    for (const item of profile) push(String(item));
+  }
+  for (const item of user.galary ?? []) {
+    push(String(item));
+  }
+  return urls.slice(0, MAX_PROFILE_PHOTOS);
+};
+
+const syncProfileImageFromGalary = (galary: string[], fallback?: string) => {
+  if (galary.length > 0) return galary[0]!;
+  return fallback?.trim() || '';
+};
+
+const updateMyProfile = async (
+  id: string,
+  payload: Partial<IUser>,
+  profileImageFile?: Express.Multer.File,
+  certificationFiles: Express.Multer.File[] = [],
+) => {
+  const user = await User.findById(id);
+  if (!user) {
+    throw new AppError(404, 'User not found');
+  }
+
+  if (profileImageFile) {
+    const { url } = await fileUploader.uploadToCloudinary(profileImageFile);
+    const galary = normalizeProfileGalary(user);
+    if (galary.length > 0) {
+      galary[0] = url;
+    } else {
+      galary.push(url);
+    }
+    payload.galary = galary.slice(0, MAX_PROFILE_PHOTOS);
+    payload.profileImage = syncProfileImageFromGalary(payload.galary, url);
+  }
+
+  if (payload.language !== undefined) {
+    payload.language = normalizeUserLanguages(payload.language);
+  }
+
+  if (Array.isArray(payload.galary)) {
+    const galary = payload.galary
+      .map((u) => String(u).trim())
+      .filter((u) => u.length > 0)
+      .filter((u, i, arr) => arr.indexOf(u) === i)
+      .slice(0, MAX_PROFILE_PHOTOS);
+    payload.galary = galary;
+    const primary = syncProfileImageFromGalary(
+      galary,
+      Array.isArray(user.profileImage)
+        ? user.profileImage[0]
+        : (user.profileImage as string | undefined),
+    );
+    if (primary) {
+      payload.profileImage = primary;
+    }
+  }
+
+  if (certificationFiles.length > 0) {
+    const uploaded = await Promise.all(
+      certificationFiles.map((file) =>
+        fileUploader.uploadToCloudinary(file),
+      ),
+    );
+    const newUrls = uploaded.map((f) => f.url);
+    const existingUrls = Array.isArray(payload.certifications)
+      ? payload.certifications.filter((u) => u && String(u).trim())
+      : (user.certifications ?? []).map((u) => String(u));
+    payload.certifications = [...existingUrls, ...newUrls];
+  }
+
+  if (payload.zip && payload.zip !== user.zip) {
+    const locationData = await getLocationFromZip(payload.zip);
+    if (locationData) {
+      payload.location = locationData.location;
+      payload.lat = locationData.lat;
+      payload.lng = locationData.lng;
+    }
+  }
+
+  const result = await User.findByIdAndUpdate(id, payload, {
+    new: true,
+    runValidators: true,
+  });
+
+  if (!result) {
+    throw new AppError(404, 'User not found');
+  }
+
+  return result;
+};
+
+const uploadGalaryImages = async (
+  userId: string,
+  payload: Partial<IUser>,
+  files: Express.Multer.File[],
+) => {
+  const user = await User.findById(userId);
+
+  if (!user) {
+    throw new AppError(404, 'User not found');
+  }
+
+  let galary = normalizeProfileGalary(user);
+
+  if (Array.isArray(payload.galary)) {
+    galary = payload.galary
+      .map((u) => String(u).trim())
+      .filter((u) => u.length > 0)
+      .filter((u, i, arr) => arr.indexOf(u) === i)
+      .slice(0, MAX_PROFILE_PHOTOS);
+  }
+
+  if (files?.length) {
+    const uploadedFiles = await Promise.all(
+      files.map((file) => fileUploader.uploadToCloudinary(file)),
+    );
+    const newUrls = uploadedFiles.map((file) => file.url);
+    const combined = [...galary, ...newUrls].filter(
+      (u, i, arr) => arr.indexOf(u) === i,
+    );
+    if (combined.length > MAX_PROFILE_PHOTOS) {
+      throw new AppError(
+        400,
+        `Maximum ${MAX_PROFILE_PHOTOS} profile photos allowed`,
+      );
+    }
+    galary = combined;
+  }
+
+  const profileImage = syncProfileImageFromGalary(
+    galary,
+    typeof user.profileImage === 'string'
+      ? user.profileImage
+      : undefined,
+  );
+
+  const result = await User.findByIdAndUpdate(
+    userId,
+    { galary, profileImage },
+    { new: true },
+  );
+
+  if (!result) {
+    throw new AppError(404, 'User not found');
+  }
+
+  return result;
+};
+
+const certificationsUpload = async (
+  userId: string,
+  payload: IUser,
+  files: Express.Multer.File[],
+) => {
+  const user = await User.findById(userId);
+
+  if (!user) {
+    throw new AppError(404, 'User not found');
+  }
+  if (files?.length) {
+    const uploadedFiles = await Promise.all(
+      files.map((file) => fileUploader.uploadToCloudinary(file)),
+    );
+
+    payload.certifications = uploadedFiles.map((file) => file.url);
+  }
+
+  const result = await User.findByIdAndUpdate(userId, payload, {
+    new: true,
+  });
+
+  return result;
+};
+
+export const userService = {
+  createUser,
+  getAllUser,
+  getUserById,
+  updateUserById,
+  deleteUserById,
+  profile,
+  updateMyProfile,
+  getMyServicesPaidCategoryIds,
+  uploadGalaryImages,
+  certificationsUpload,
+};

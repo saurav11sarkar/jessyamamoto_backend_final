@@ -1,0 +1,32 @@
+import { TErrorSources, TGenericErrorResponse } from '../interface';
+
+const handleDuplicateError = (err: any): TGenericErrorResponse => {
+  const message = String(err?.message ?? '');
+  const match = message.match(/"([^"]*)"/);
+  const extractedMessage = match?.[1];
+  const field =
+    err?.keyPattern && typeof err.keyPattern === 'object'
+      ? (Object.keys(err.keyPattern)[0] ?? '')
+      : '';
+  const duplicateValue =
+    err?.keyValue && field && field in err.keyValue
+      ? String(err.keyValue[field])
+      : extractedMessage;
+
+  const errorSources: TErrorSources = [
+    {
+      path: field,
+      message: duplicateValue
+        ? `${field || 'Value'} "${duplicateValue}" already exists`
+        : `${extractedMessage || 'Value'} already exists`,
+    },
+  ];
+
+  return {
+    statusCode: 400,
+    message: 'Duplicate value',
+    errorSources,
+  };
+};
+
+export default handleDuplicateError;
