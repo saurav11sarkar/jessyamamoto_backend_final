@@ -180,7 +180,8 @@ const getAllUserPayment = async (
       },
     })
     .populate('category')
-    .populate('booking');
+    .populate('booking')
+    .populate('subscription');
 
   if (!result) {
     throw new AppError(404, 'Payment not found');

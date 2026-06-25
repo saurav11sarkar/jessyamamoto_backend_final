@@ -187,6 +187,16 @@ const profile = async (id: string) => {
   if (!result) {
     throw new AppError(404, 'User not found');
   }
+
+  if (
+    result.isSubscription &&
+    result.subscriptionExpiry &&
+    new Date(result.subscriptionExpiry) <= new Date()
+  ) {
+    result.isSubscription = false;
+    await result.save();
+  }
+
   return {
     ...result.toObject(),
     myServicesPaidCategoryIds: await getMyServicesPaidCategoryIds(id),

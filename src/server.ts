@@ -5,6 +5,7 @@ import config from './app/config';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import socketHandler from './app/helper/socketHandler';
+import startSubscriptionCron from './app/helper/subscriptionCron';
 import 'dotenv/config';
 
 
@@ -50,6 +51,8 @@ const main = async () => {
 
     const mongo = await mongoose.connect(config.mongoUri);
     console.log(`✅ MongoDB connected: ${mongo.connection.host}`);
+
+    startSubscriptionCron();
 
     httpServer.listen(PORT, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
