@@ -28,6 +28,8 @@ const allowedOrigins = [
   'https://dashboard.jetsetcares.org',
   'http://localhost:3000',
   'http://localhost:3001',
+  'https://jessyamamoto-frontend-final.vercel.app',
+  'https://jessyamamoto-dashboard-final.vercel.app'
 ];
 
 app.use(
