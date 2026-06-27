@@ -16,7 +16,7 @@ const sendMailer = async (
     },
   });
   const info = await transporter.sendMail({
-    from: `"Jetsetcares" ${config.email.from}`,
+    from: `"Jetsetcares" <${config.email.from}>`,
     to: email,
     subject,
     html,

@@ -161,8 +161,8 @@ const forgotPassword = async (email: string) => {
 
   await sendMailer(
     user.email,
-    user.firstName,
-    createOtpTemplate(otp, user.email, 'Your Company'),
+    'Verify your Email - Jetsetcares',
+    createOtpTemplate(otp, [user.firstName, user.lastName].filter(Boolean).join(' '), 'Jetsetcares'),
   );
 
   return { message: 'OTP sent to your email' };
