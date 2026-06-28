@@ -10,6 +10,7 @@ export interface IUser {
   email: string;
   password: string;
   role: 'find job' | 'find care' | 'admin' | 'ambassador';
+  roles?: Array<'find job' | 'find care' | 'admin' | 'ambassador'>;
   profileImage?: string | string[];
   bio?: string;
   phone?: string;

@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 export interface IService {
   userId: Types.ObjectId;
   categoryId: Types.ObjectId;
+  role?: 'find job' | 'find care';
   email?: string;
   firstName?: string;
   lastName?: string;

@@ -20,8 +20,41 @@ const registerUser = async (
   },
   profileImageFile?: Express.Multer.File,
 ) => {
-  const exist = await User.findOne({ email: payload.email });
-  if (exist) throw new AppError(400, 'User already exists');
+  const exist = await User.findOne({ email: payload.email }).select('+password');
+  if (exist) {
+    if (!payload.password) {
+      throw new AppError(400, 'Password is required for existing account');
+    }
+
+    const isPasswordMatched = await bcrypt.compare(payload.password, exist.password);
+    if (!isPasswordMatched) {
+      throw new AppError(
+        409,
+        'An account already exists with this email. Please log in to add another role.',
+      );
+    }
+
+    if (payload.role && !exist.roles?.includes(payload.role)) {
+      exist.roles = [...(exist.roles ?? [exist.role]), payload.role];
+    }
+    if (payload.firstName) exist.firstName = payload.firstName;
+    if (payload.lastName !== undefined) exist.lastName = payload.lastName;
+    if (payload.gender !== undefined) exist.gender = payload.gender;
+    if (payload.bio !== undefined) exist.bio = payload.bio;
+    if (payload.countery !== undefined) exist.countery = payload.countery;
+    if (payload.city !== undefined) exist.city = payload.city;
+    if (payload.neighborhoods !== undefined) {
+      exist.neighborhoods = payload.neighborhoods;
+    }
+    if (profileImageFile) {
+      const { url } = await fileUploader.uploadToCloudinary(profileImageFile);
+      exist.profileImage = url;
+    }
+    await exist.save();
+
+    const { password, otp, otpExpiry, ...safeUser } = exist.toObject();
+    return safeUser;
+  }
 
   if (profileImageFile) {
     const { url } = await fileUploader.uploadToCloudinary(profileImageFile);

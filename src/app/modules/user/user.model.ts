@@ -48,6 +48,12 @@ const userSchema = new mongoose.Schema<IUser>(
       enum: ['find job', 'find care', 'admin', 'ambassador'],
       required: true,
     },
+    roles: [
+      {
+        type: String,
+        enum: ['find job', 'find care', 'admin', 'ambassador'],
+      },
+    ],
     profileImage: String,
     bio: String,
     phone: String,
@@ -140,6 +146,11 @@ const userSchema = new mongoose.Schema<IUser>(
 );
 
 userSchema.pre('save', function (next) {
+  if (!Array.isArray(this.roles) || this.roles.length === 0) {
+    this.roles = [this.role];
+  } else if (!this.roles.includes(this.role)) {
+    this.roles.push(this.role);
+  }
   if (this.NIDNumber === '') {
     this.set('NIDNumber', undefined);
   }

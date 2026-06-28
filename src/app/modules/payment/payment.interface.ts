@@ -5,6 +5,7 @@ export interface IPendingServiceRegistration {
   location?: string;
   zip?: string;
   gender: string;
+  role?: 'find job' | 'find care';
   days?: string[];
   hourRate?: number;
 }

@@ -13,6 +13,12 @@ const ServiceSchema = new Schema<IService>(
       ref: 'Category',
       required: true,
     },
+    role: {
+      type: String,
+      enum: ['find job', 'find care'],
+      required: true,
+      default: 'find job',
+    },
     zip: {
       type: String,
     },

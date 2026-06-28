@@ -141,14 +141,15 @@ const uploadToCloudinary = (
 
     const ext = path.extname(file.originalname).toLowerCase();
     const isVideo = /mp4|mov|avi|mkv/.test(ext);
+    const isDocument = /pdf|doc|docx/.test(ext);
     const safeName = `${Date.now()}-${sanitizeFileName(file.originalname)}`;
 
     const stream = cloudinary.uploader.upload_stream(
       {
         folder: 'FSD',
-        resource_type: isVideo ? 'video' : 'image',
+        resource_type: isVideo ? 'video' : isDocument ? 'raw' : 'image',
         public_id: safeName,
-        ...(isVideo
+        ...(isVideo || isDocument
           ? {}
           : {
               transformation: {

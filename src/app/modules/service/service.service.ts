@@ -51,6 +51,11 @@ const registerServiceAndSubscription = async (
   userId?: string,
   profileImageFile?: Express.Multer.File,
 ) => {
+  const serviceRole =
+    payload.role === 'find care' || payload.role === 'find job'
+      ? payload.role
+      : undefined;
+
   /* ================= GET OR CREATE USER ================= */
   let user = null;
 
@@ -73,13 +78,17 @@ const registerServiceAndSubscription = async (
       const { url } = await fileUploader.uploadToCloudinary(profileImageFile);
       user.profileImage = url;
     }
+    if (serviceRole && !user.roles?.includes(serviceRole)) {
+      user.roles = [...(user.roles ?? [user.role]), serviceRole];
+    }
     if (
       payload.gender ||
       payload.country ||
       payload.countery ||
       payload.city ||
       payload.bio ||
-      profileImageFile
+      profileImageFile ||
+      serviceRole
     ) {
       await user.save();
     }
@@ -112,13 +121,19 @@ const registerServiceAndSubscription = async (
         bio: payload.bio || '',
         profileImage,
         role: payload.role,
+        roles: serviceRole ? [serviceRole] : [payload.role],
         countery: payload.countery || payload.country || '',
         city: payload.city || '',
         location: payload.location || '',
         NIDNumber: payload.NIDNumber || '',
       });
+    } else if (serviceRole && !user.roles?.includes(serviceRole)) {
+      user.roles = [...(user.roles ?? [user.role]), serviceRole];
+      await user.save();
     }
   }
+
+  const effectiveServiceRole = serviceRole || user.role;
 
   const effectiveSubscriptionId =
     payload.subscriptionId != null &&
@@ -186,6 +201,7 @@ const registerServiceAndSubscription = async (
   const existingInCategory = await Service.findOne({
     userId: user._id,
     categoryId: categoryObjectId,
+    role: effectiveServiceRole,
   });
   if (existingInCategory) {
     throw new AppError(
@@ -224,6 +240,7 @@ const registerServiceAndSubscription = async (
           {
             userId: user._id,
             categoryId: categoryObjectId,
+            role: effectiveServiceRole,
             location: loc,
             zip: payload.zip ? String(payload.zip) : undefined,
             email: user.email,
@@ -231,7 +248,7 @@ const registerServiceAndSubscription = async (
             lastName: user.lastName,
             gender,
             hourRate:
-              user.role === 'find job' && payload.hourRate != null
+              effectiveServiceRole === 'find job' && payload.hourRate != null
                 ? Number(payload.hourRate)
                 : undefined,
             days: payload.days,
@@ -263,7 +280,7 @@ const registerServiceAndSubscription = async (
 
       await Category.findByIdAndUpdate(
         categoryObjectId,
-        user.role === 'find care'
+        effectiveServiceRole === 'find care'
           ? { $addToSet: { findCareUser: user._id } }
           : { $addToSet: { findJobUser: user._id } },
         { session: dbSession },
@@ -321,14 +338,15 @@ const registerServiceAndSubscription = async (
     stripeSessionId: checkoutSession.id,
     status: 'pending',
     paymentType: 'subscription',
-    userType: user.role === 'find job' ? 'findJob' : 'findCare',
+    userType: effectiveServiceRole === 'find job' ? 'findJob' : 'findCare',
     pendingServiceRegistration: {
       categoryId: payload.categoryId,
       location: payload.location || payload.city || '',
       gender: payload.gender,
+      role: effectiveServiceRole,
       days: payload.days,
       hourRate:
-        user.role === 'find job' && payload.hourRate != null
+        effectiveServiceRole === 'find job' && payload.hourRate != null
           ? Number(payload.hourRate)
           : undefined,
     },
@@ -366,6 +384,7 @@ const completePendingServiceRegistration = async (stripeSessionId: string) => {
     const existing = await Service.findOne({
       userId: regUser._id,
       categoryId: pending.categoryId,
+      role: pending.role || regUser.role,
     }).session(dbSession);
 
     if (existing) {
@@ -386,13 +405,15 @@ const completePendingServiceRegistration = async (stripeSessionId: string) => {
         {
           userId: regUser._id,
           categoryId: pending.categoryId,
+          role: pending.role || regUser.role,
           location: pending.location || '',
           email: regUser.email,
           firstName: regUser.firstName,
           lastName: regUser.lastName,
           gender: pending.gender,
           hourRate:
-            regUser.role === 'find job' && pending.hourRate != null
+            (pending.role || regUser.role) === 'find job' &&
+            pending.hourRate != null
               ? pending.hourRate
               : undefined,
           days: pending.days,
@@ -415,7 +436,7 @@ const completePendingServiceRegistration = async (stripeSessionId: string) => {
 
     await Category.findByIdAndUpdate(
       pending.categoryId,
-      regUser.role === 'find care'
+      (pending.role || regUser.role) === 'find care'
         ? { $addToSet: { findCareUser: regUser._id } }
         : { $addToSet: { findJobUser: regUser._id } },
       { session: dbSession },
@@ -614,7 +635,7 @@ const serviceBaseUser = async (
   // ================= MATCH =================
   const match: any = {
     categoryId: new mongoose.Types.ObjectId(categoryId),
-    'user.role': role,
+    $or: [{ role }, { role: { $exists: false }, 'user.role': role }],
     'user.status': 'active',
     status: 'pending',
   };
@@ -840,7 +861,10 @@ const serviceUserBaseUser = async (
   // ================= MATCH =================
   const match: any = {
     categoryId: new mongoose.Types.ObjectId(categoryId),
-    'user.role': targetRole,
+    $or: [
+      { role: targetRole },
+      { role: { $exists: false }, 'user.role': targetRole },
+    ],
     'user.status': 'active',
     status: 'pending', // only available services
   };
@@ -1049,11 +1073,11 @@ const getAllServiceLocations = async (query: any, userId?: string) => {
   }
 
   if (user?.role === 'find job') {
-    match['user.role'] = 'find care';
+    match.$or = [{ role: 'find care' }, { role: { $exists: false }, 'user.role': 'find care' }];
     match['user.status'] = 'active';
     match.status = 'pending';
   } else if (user?.role === 'find care') {
-    match['user.role'] = 'find job';
+    match.$or = [{ role: 'find job' }, { role: { $exists: false }, 'user.role': 'find job' }];
     match['user.status'] = 'active';
     match.status = 'pending';
   }
