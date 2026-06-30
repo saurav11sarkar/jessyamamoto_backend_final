@@ -34,6 +34,10 @@ const CountrySchema = new Schema<ICountry>(
       type: String,
       trim: true,
     },
+    order: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true },
 );

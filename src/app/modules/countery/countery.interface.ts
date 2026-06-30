@@ -14,6 +14,7 @@ export interface ICountry {
   countryName: string;
   cities: ICity[];
   image?: string;
+  order?: number;
   createdAt?: Date;
   updatedAt?: Date;
 }

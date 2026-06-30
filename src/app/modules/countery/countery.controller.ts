@@ -62,6 +62,22 @@ const updateCountry = catchAsync(async (req, res) => {
   });
 });
 
+const reorderCountry = catchAsync(async (req, res) => {
+  const { orderedIds } = req.body;
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+    throw new AppError(400, 'orderedIds must be a non-empty array');
+  }
+
+  const result = await countryService.reorderCountries(orderedIds);
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: 'Countries reordered successfully',
+    data: result,
+  });
+});
+
 const deleteCountry = catchAsync(async (req, res) => {
   const result = await countryService.deleteCountry(req.params.id!);
 
@@ -166,6 +182,7 @@ export const countryController = {
   getAllCountry,
   getCountryById,
   updateCountry,
+  reorderCountry,
   deleteCountry,
   addCity,
   removeCity,

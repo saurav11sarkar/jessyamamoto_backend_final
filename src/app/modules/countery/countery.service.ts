@@ -21,7 +21,8 @@ const createCountry = async (payload: ICountry, file?: Express.Multer.File) => {
 };
 
 const getAllCountries = async (params: any, options: IOption) => {
-  const { page, limit, skip, sortBy, sortOrder } = pagination(options);
+  const { page, limit, skip, sortOrder } = pagination(options);
+  const hasCustomSort = Boolean(options.sortBy);
   const { searchTerm, ...filterData } = params;
 
   const andCondition: any[] = [];
@@ -53,10 +54,14 @@ const getAllCountries = async (params: any, options: IOption) => {
   }
   const whereCondition = andCondition.length > 0 ? { $and: andCondition } : {};
 
+  const sortCondition = hasCustomSort
+    ? ({ [options.sortBy as string]: sortOrder } as any)
+    : ({ order: 1, createdAt: -1 } as any);
+
   const result = await Country.find(whereCondition)
     .skip(skip)
     .limit(limit)
-    .sort({ [sortBy]: sortOrder } as any);
+    .sort(sortCondition);
 
   const total = await Country.countDocuments(whereCondition);
 
@@ -89,6 +94,23 @@ const updateCountry = async (
 
   if (!updated) throw new AppError(404, 'Country not found');
   return updated;
+};
+
+const reorderCountries = async (orderedIds: string[]) => {
+  if (!orderedIds.length) {
+    throw new AppError(400, 'orderedIds is required');
+  }
+
+  await Country.bulkWrite(
+    orderedIds.map((id, index) => ({
+      updateOne: {
+        filter: { _id: id },
+        update: { $set: { order: index } },
+      },
+    })),
+  );
+
+  return Country.find({ _id: { $in: orderedIds } }).sort({ order: 1 });
 };
 
 const deleteCountry = async (id: string) => {
@@ -182,6 +204,7 @@ export const countryService = {
   getAllCountries,
   getCountry,
   updateCountry,
+  reorderCountries,
   deleteCountry,
   addCityToCountry,
   removeCityFromCountry,
