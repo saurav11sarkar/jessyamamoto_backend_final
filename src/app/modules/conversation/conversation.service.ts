@@ -33,7 +33,7 @@ const getConversations = async (userId: string) => {
     participants: userId,
     deletedBy: { $ne: new Types.ObjectId(userId) },
   })
-    .populate('participants', 'firstName lastName profileImage role')
+    .populate('participants', 'firstName lastName profileImage role service')
     .populate('lastMessageReceiverId', '_id')
     .sort({ lastMessageAt: -1 })
     .lean();

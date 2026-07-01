@@ -199,6 +199,7 @@ const profile = async (id: string) => {
 
   return {
     ...result.toObject(),
+    country: result.countery || '',
     myServicesPaidCategoryIds: await getMyServicesPaidCategoryIds(id),
   };
 };
@@ -231,6 +232,15 @@ const syncProfileImageFromGalary = (galary: string[], fallback?: string) => {
   return fallback?.trim() || '';
 };
 
+const moveToFront = (items: string[], selected?: string) => {
+  const target = selected?.trim();
+  if (!target) return items;
+  return [
+    target,
+    ...items.filter((item) => item !== target),
+  ].filter((item, index, array) => array.indexOf(item) === index);
+};
+
 const updateMyProfile = async (
   id: string,
   payload: Partial<IUser>,
@@ -240,6 +250,25 @@ const updateMyProfile = async (
   const user = await User.findById(id);
   if (!user) {
     throw new AppError(404, 'User not found');
+  }
+
+  const incomingCountry = (payload as Partial<IUser> & { country?: string })
+    .country;
+  if (incomingCountry !== undefined) {
+    payload.countery = incomingCountry;
+    delete (payload as Partial<IUser> & { country?: string }).country;
+  }
+
+  const incomingExperience = (
+    payload as Partial<IUser> & { experience?: number }
+  ).experience;
+  if (incomingExperience !== undefined) {
+    payload.exprience = Number(incomingExperience) || 0;
+    delete (payload as Partial<IUser> & { experience?: number }).experience;
+  }
+
+  if (payload.city !== undefined) {
+    payload.location = payload.city || payload.location || '';
   }
 
   if (profileImageFile) {
@@ -259,14 +288,19 @@ const updateMyProfile = async (
   }
 
   if (Array.isArray(payload.galary)) {
+    const selectedExistingMain =
+      typeof payload.profileImage === 'string' ? payload.profileImage : '';
     const galary = payload.galary
       .map((u) => String(u).trim())
       .filter((u) => u.length > 0)
       .filter((u, i, arr) => arr.indexOf(u) === i)
       .slice(0, MAX_PROFILE_PHOTOS);
-    payload.galary = galary;
+    payload.galary = moveToFront(galary, selectedExistingMain).slice(
+      0,
+      MAX_PROFILE_PHOTOS,
+    );
     const primary = syncProfileImageFromGalary(
-      galary,
+      payload.galary,
       Array.isArray(user.profileImage)
         ? user.profileImage[0]
         : (user.profileImage as string | undefined),
@@ -307,7 +341,24 @@ const updateMyProfile = async (
     throw new AppError(404, 'User not found');
   }
 
-  return result;
+  const serviceUpdate: Record<string, unknown> = {};
+  if (payload.firstName !== undefined) serviceUpdate.firstName = result.firstName;
+  if (payload.lastName !== undefined) serviceUpdate.lastName = result.lastName;
+  if (payload.email !== undefined) serviceUpdate.email = result.email;
+  if (payload.gender !== undefined) serviceUpdate.gender = result.gender;
+  if (payload.location !== undefined || payload.city !== undefined) {
+    serviceUpdate.location = result.location || result.city || '';
+  }
+  if (payload.hourRate !== undefined) serviceUpdate.hourRate = payload.hourRate;
+
+  if (Object.keys(serviceUpdate).length > 0) {
+    await Service.updateMany({ userId: result._id }, { $set: serviceUpdate });
+  }
+
+  return {
+    ...result.toObject(),
+    country: result.countery || '',
+  };
 };
 
 const uploadGalaryImages = async (
@@ -345,7 +396,26 @@ const uploadGalaryImages = async (
         `Maximum ${MAX_PROFILE_PHOTOS} profile photos allowed`,
       );
     }
-    galary = combined;
+    const mainPhotoSource = (payload as Partial<IUser> & {
+      mainPhotoSource?: string;
+    }).mainPhotoSource;
+    const selectedNewIndex = mainPhotoSource?.startsWith('new:')
+      ? Number(mainPhotoSource.replace('new:', ''))
+      : -1;
+    const selectedNewUrl =
+      selectedNewIndex >= 0 ? newUrls[selectedNewIndex] : undefined;
+    galary = moveToFront(
+      combined,
+      selectedNewUrl ||
+        (typeof payload.profileImage === 'string'
+          ? payload.profileImage
+          : undefined),
+    ).slice(0, MAX_PROFILE_PHOTOS);
+  } else if (typeof payload.profileImage === 'string') {
+    galary = moveToFront(galary, payload.profileImage).slice(
+      0,
+      MAX_PROFILE_PHOTOS,
+    );
   }
 
   const profileImage = syncProfileImageFromGalary(

@@ -31,8 +31,8 @@ const sendMessage = async (
 
   // Populate sender and receiver details
   const populatedMessage = await Message.findById(newMessage._id)
-    .populate('senderId', 'firstName lastName profileImage role')
-    .populate('receiverId', 'firstName lastName profileImage role');
+    .populate('senderId', 'firstName lastName profileImage role service')
+    .populate('receiverId', 'firstName lastName profileImage role service');
 
   return populatedMessage;
 };
@@ -44,8 +44,8 @@ const getMessages = async (conversationId: string, userId: string) => {
     conversationId,
     deletedBy: { $ne: new Types.ObjectId(userId) },
   })
-    .populate('senderId', 'firstName lastName profileImage role')
-    .populate('receiverId', 'firstName lastName profileImage role')
+    .populate('senderId', 'firstName lastName profileImage role service')
+    .populate('receiverId', 'firstName lastName profileImage role service')
     .sort({ createdAt: 1 })
     .lean();
 
@@ -87,8 +87,8 @@ const getMessageById = async (messageId: string, userId: string) => {
     _id: messageId,
     deletedBy: { $ne: userId },
   })
-    .populate('senderId', 'firstName lastName profileImage role')
-    .populate('receiverId', 'firstName lastName profileImage role');
+    .populate('senderId', 'firstName lastName profileImage role service')
+    .populate('receiverId', 'firstName lastName profileImage role service');
 
   return message;
 };
@@ -129,8 +129,8 @@ const editMessage = async (
   }
 
   const populatedMessage = await Message.findById(message._id)
-    .populate('senderId', 'firstName lastName profileImage role')
-    .populate('receiverId', 'firstName lastName profileImage role');
+    .populate('senderId', 'firstName lastName profileImage role service')
+    .populate('receiverId', 'firstName lastName profileImage role service');
 
   return populatedMessage;
 };

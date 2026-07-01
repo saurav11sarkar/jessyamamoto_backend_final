@@ -635,7 +635,7 @@ const serviceBaseUser = async (
   // ================= MATCH =================
   const match: any = {
     categoryId: new mongoose.Types.ObjectId(categoryId),
-    $or: [{ role }, { role: { $exists: false }, 'user.role': role }],
+    $and: [{ $or: [{ role }, { role: { $exists: false }, 'user.role': role }] }],
     'user.status': 'active',
     status: 'pending',
   };
@@ -651,13 +651,18 @@ const serviceBaseUser = async (
 
   // ================= SEARCH =================
   if (searchTerm) {
-    match.$or = [
+    match.$and.push({
+      $or: [
       { 'user.firstName': { $regex: searchTerm, $options: 'i' } },
       { 'user.lastName': { $regex: searchTerm, $options: 'i' } },
       { 'user.email': { $regex: searchTerm, $options: 'i' } },
+      { location: { $regex: searchTerm, $options: 'i' } },
       { 'user.location': { $regex: searchTerm, $options: 'i' } },
+      { 'user.city': { $regex: searchTerm, $options: 'i' } },
+      { 'user.countery': { $regex: searchTerm, $options: 'i' } },
       { 'user.bio': { $regex: searchTerm, $options: 'i' } },
-    ];
+      ],
+    });
   }
 
   // ================= DYNAMIC FILTER =================
@@ -678,11 +683,12 @@ const serviceBaseUser = async (
     if (key === 'location') {
       const locStr = String(value).trim();
       if (locStr) {
-        match.$and = match.$and || [];
         match.$and.push({
           $or: [
             { location: { $regex: locStr, $options: 'i' } },
             { 'user.location': { $regex: locStr, $options: 'i' } },
+            { 'user.city': { $regex: locStr, $options: 'i' } },
+            { 'user.countery': { $regex: locStr, $options: 'i' } },
           ],
         });
       }
@@ -805,6 +811,8 @@ const serviceBaseUser = async (
           gender: 1,
           experienceLevel: 1,
           location: 1,
+          countery: 1,
+          city: 1,
           language: 1,
           agegroup: 1,
           education: 1,
@@ -861,9 +869,13 @@ const serviceUserBaseUser = async (
   // ================= MATCH =================
   const match: any = {
     categoryId: new mongoose.Types.ObjectId(categoryId),
-    $or: [
-      { role: targetRole },
-      { role: { $exists: false }, 'user.role': targetRole },
+    $and: [
+      {
+        $or: [
+          { role: targetRole },
+          { role: { $exists: false }, 'user.role': targetRole },
+        ],
+      },
     ],
     'user.status': 'active',
     status: 'pending', // only available services
@@ -880,13 +892,18 @@ const serviceUserBaseUser = async (
 
   // ================= SEARCH =================
   if (searchTerm) {
-    match.$or = [
+    match.$and.push({
+      $or: [
       { 'user.firstName': { $regex: searchTerm, $options: 'i' } },
       { 'user.lastName': { $regex: searchTerm, $options: 'i' } },
       { 'user.email': { $regex: searchTerm, $options: 'i' } },
+      { location: { $regex: searchTerm, $options: 'i' } },
       { 'user.location': { $regex: searchTerm, $options: 'i' } },
+      { 'user.city': { $regex: searchTerm, $options: 'i' } },
+      { 'user.countery': { $regex: searchTerm, $options: 'i' } },
       { 'user.bio': { $regex: searchTerm, $options: 'i' } },
-    ];
+      ],
+    });
   }
 
   // ================= DYNAMIC FILTER =================
@@ -909,11 +926,12 @@ const serviceUserBaseUser = async (
     if (key === 'location') {
       const locStr = String(value).trim();
       if (locStr) {
-        match.$and = match.$and || [];
         match.$and.push({
           $or: [
             { location: { $regex: locStr, $options: 'i' } },
             { 'user.location': { $regex: locStr, $options: 'i' } },
+            { 'user.city': { $regex: locStr, $options: 'i' } },
+            { 'user.countery': { $regex: locStr, $options: 'i' } },
           ],
         });
       }
@@ -1011,6 +1029,8 @@ const serviceUserBaseUser = async (
           gender: 1,
           experienceLevel: 1,
           location: 1,
+          countery: 1,
+          city: 1,
           language: 1,
           agegroup: 1,
           education: 1,
@@ -1073,11 +1093,25 @@ const getAllServiceLocations = async (query: any, userId?: string) => {
   }
 
   if (user?.role === 'find job') {
-    match.$or = [{ role: 'find care' }, { role: { $exists: false }, 'user.role': 'find care' }];
+    match.$and = [
+      {
+        $or: [
+          { role: 'find care' },
+          { role: { $exists: false }, 'user.role': 'find care' },
+        ],
+      },
+    ];
     match['user.status'] = 'active';
     match.status = 'pending';
   } else if (user?.role === 'find care') {
-    match.$or = [{ role: 'find job' }, { role: { $exists: false }, 'user.role': 'find job' }];
+    match.$and = [
+      {
+        $or: [
+          { role: 'find job' },
+          { role: { $exists: false }, 'user.role': 'find job' },
+        ],
+      },
+    ];
     match['user.status'] = 'active';
     match.status = 'pending';
   }
@@ -1108,6 +1142,22 @@ const getAllServiceLocations = async (query: any, userId?: string) => {
             $options: 'i',
           },
         },
+        {
+          'user.city': {
+            $exists: true,
+            $nin: [null, ''],
+            $regex: searchTerm,
+            $options: 'i',
+          },
+        },
+        {
+          'user.countery': {
+            $exists: true,
+            $nin: [null, ''],
+            $regex: searchTerm,
+            $options: 'i',
+          },
+        },
       ],
     });
   } else {
@@ -1122,6 +1172,12 @@ const getAllServiceLocations = async (query: any, userId?: string) => {
         },
         {
           'user.location': {
+            $exists: true,
+            $nin: [null, ''],
+          },
+        },
+        {
+          'user.city': {
             $exists: true,
             $nin: [null, ''],
           },
@@ -1143,7 +1199,12 @@ const getAllServiceLocations = async (query: any, userId?: string) => {
     { $match: match },
     {
       $addFields: {
-        resolvedLocation: { $ifNull: ['$location', '$user.location'] },
+        resolvedLocation: {
+          $ifNull: [
+            '$location',
+            { $ifNull: ['$user.location', '$user.city'] },
+          ],
+        },
         resolvedZip: { $ifNull: ['$zip', '$user.zip'] },
         resolvedLat: { $ifNull: ['$lat', '$user.lat'] },
         resolvedLng: { $ifNull: ['$lng', '$user.lng'] },

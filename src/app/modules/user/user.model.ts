@@ -127,6 +127,7 @@ const userSchema = new mongoose.Schema<IUser>(
     exprience: Number,
     experiences: [{ type: String }],
     language: [userLanguageSchema],
+    languageLavel: { type: String },
     agegroup: [{ type: String }],
     education: [{ type: String }],
     canHelpWith: [{ type: String }],

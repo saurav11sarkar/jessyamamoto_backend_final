@@ -106,7 +106,7 @@ const updateMyProfile = catchAsync(async (req, res) => {
   const certificationFiles = uploaded?.certifications ?? [];
   const formData = req.body.data ? JSON.parse(req.body.data) : req.body;
 
-  let result = await userService.updateMyProfile(
+  let result: unknown = await userService.updateMyProfile(
     req.user?.id,
     formData,
     profileImage,
