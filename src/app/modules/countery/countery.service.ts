@@ -20,7 +20,11 @@ const createCountry = async (payload: ICountry, file?: Express.Multer.File) => {
   return await Country.create(payload);
 };
 
-const getAllCountries = async (params: any, options: IOption) => {
+const getAllCountries = async (
+  params: any,
+  options: IOption,
+  includeInactive = false,
+) => {
   const { page, limit, skip, sortOrder } = pagination(options);
   const hasCustomSort = Boolean(options.sortBy);
   const { searchTerm, ...filterData } = params;
@@ -52,6 +56,11 @@ const getAllCountries = async (params: any, options: IOption) => {
       })),
     });
   }
+
+  if (!includeInactive) {
+    andCondition.push({ status: { $ne: 'inactive' } });
+  }
+
   const whereCondition = andCondition.length > 0 ? { $and: andCondition } : {};
 
   const sortCondition = hasCustomSort
@@ -65,8 +74,18 @@ const getAllCountries = async (params: any, options: IOption) => {
 
   const total = await Country.countDocuments(whereCondition);
 
+  const data = includeInactive
+    ? result
+    : result.map((country) => {
+        const plain = country.toObject();
+        plain.cities = plain.cities.filter(
+          (city: ICity) => city.status !== 'inactive',
+        );
+        return plain;
+      });
+
   return {
-    data: result,
+    data,
     meta: { total, page, limit },
   };
 };
@@ -199,6 +218,23 @@ const removeNeighborhoodFromCountry = async (
   return await country.save();
 };
 
+const updateCityStatus = async (
+  id: string,
+  cityName: string,
+  status: 'active' | 'inactive',
+) => {
+  const country = await Country.findById(id);
+  if (!country) throw new AppError(404, 'Country not found');
+
+  const city = country.cities.find((item) => item.cityName === cityName);
+  if (!city) {
+    throw new AppError(404, 'City not found in this country');
+  }
+
+  city.status = status;
+  return await country.save();
+};
+
 export const countryService = {
   createCountry,
   getAllCountries,
@@ -210,4 +246,5 @@ export const countryService = {
   removeCityFromCountry,
   addNeighborhoodToCountry,
   removeNeighborhoodFromCountry,
+  updateCityStatus,
 };

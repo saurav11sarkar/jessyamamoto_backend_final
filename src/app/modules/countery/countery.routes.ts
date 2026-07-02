@@ -12,6 +12,11 @@ router.post(
   countryController.createCountry,
 );
 router.get('/', countryController.getAllCountry);
+router.get(
+  '/admin/all',
+  auth(userRole.admin),
+  countryController.getAllCountryAdmin,
+);
 router.patch(
   '/reorder',
   auth(userRole.admin),
@@ -42,6 +47,11 @@ router.patch(
   '/:id/city/:cityName/neighborhood/remove',
   auth(userRole.admin),
   countryController.removeNeighborhood,
+);
+router.patch(
+  '/:id/city/:cityName/status',
+  auth(userRole.admin),
+  countryController.updateCityStatus,
 );
 router.get('/:id', countryController.getCountryById);
 router.put(

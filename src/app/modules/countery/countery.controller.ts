@@ -27,7 +27,27 @@ const getAllCountry = catchAsync(async (req, res) => {
   ]);
   const options = pick(req.query, ['page', 'limit', 'sortBy', 'sortOrder']);
 
-  const result = await countryService.getAllCountries(params, options);
+  const result = await countryService.getAllCountries(params, options, false);
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: 'Countries fetched successfully',
+    meta: result.meta,
+    data: result.data,
+  });
+});
+
+const getAllCountryAdmin = catchAsync(async (req, res) => {
+  const params = pick(req.query, [
+    'searchTerm',
+    'countryName',
+    'cityName',
+    'neighborhoods',
+  ]);
+  const options = pick(req.query, ['page', 'limit', 'sortBy', 'sortOrder']);
+
+  const result = await countryService.getAllCountries(params, options, true);
 
   sendResponse(res, {
     statusCode: 200,
@@ -177,9 +197,34 @@ const removeNeighborhood = catchAsync(async (req, res) => {
 });
 
 
+const updateCityStatus = catchAsync(async (req, res) => {
+  const cityName = req.params.cityName;
+  const { status } = req.body;
+  if (!cityName) {
+    throw new AppError(400, 'cityName is required');
+  }
+  if (status !== 'active' && status !== 'inactive') {
+    throw new AppError(400, "status must be 'active' or 'inactive'");
+  }
+
+  const result = await countryService.updateCityStatus(
+    req.params.id!,
+    cityName,
+    status,
+  );
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: 'City status updated successfully',
+    data: result,
+  });
+});
+
 export const countryController = {
   createCountry,
   getAllCountry,
+  getAllCountryAdmin,
   getCountryById,
   updateCountry,
   reorderCountry,
@@ -188,4 +233,5 @@ export const countryController = {
   removeCity,
   addNeighborhood,
   removeNeighborhood,
+  updateCityStatus,
 };

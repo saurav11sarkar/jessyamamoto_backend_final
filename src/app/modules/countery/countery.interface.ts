@@ -8,6 +8,7 @@
 export interface ICity {
   cityName: string;
   neighborhoods: string[];
+  status?: 'active' | 'inactive';
 }
 
 export interface ICountry {
@@ -15,6 +16,7 @@ export interface ICountry {
   cities: ICity[];
   image?: string;
   order?: number;
+  status?: 'active' | 'inactive';
   createdAt?: Date;
   updatedAt?: Date;
 }

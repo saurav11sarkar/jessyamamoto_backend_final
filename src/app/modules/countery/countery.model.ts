@@ -15,6 +15,11 @@ const CitySchema = new Schema<ICity>(
         trim: true,
       },
     ],
+    status: {
+      type: String,
+      enum: ['active', 'inactive'],
+      default: 'active',
+    },
   },
   { _id: false },
 );
@@ -37,6 +42,11 @@ const CountrySchema = new Schema<ICountry>(
     order: {
       type: Number,
       default: 0,
+    },
+    status: {
+      type: String,
+      enum: ['active', 'inactive'],
+      default: 'active',
     },
   },
   { timestamps: true },
