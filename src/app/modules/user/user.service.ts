@@ -8,6 +8,7 @@ import { IUser } from './user.interface';
 import User from './user.model';
 import { normalizeUserLanguages } from './user.language.util';
 import { getLocationFromZip } from '../../helper/geocode';
+import { resolveCanonicalLocation } from '../countery/countery.util';
 
 /**
  * Category ids for home "My Services": categories the user registered (user.category),
@@ -257,6 +258,15 @@ const updateMyProfile = async (
   if (incomingCountry !== undefined) {
     payload.countery = incomingCountry;
     delete (payload as Partial<IUser> & { country?: string }).country;
+  }
+
+  if (payload.countery !== undefined || payload.city !== undefined) {
+    const canonical = await resolveCanonicalLocation(
+      payload.countery,
+      payload.city,
+    );
+    if (canonical.countery !== undefined) payload.countery = canonical.countery;
+    if (canonical.city !== undefined) payload.city = canonical.city;
   }
 
   const incomingExperience = (

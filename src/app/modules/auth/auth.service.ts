@@ -12,6 +12,7 @@ import createOtpTemplate from '../../utils/createOtpTemplate';
 import { userRole } from '../user/user.constant';
 import { getMyServicesPaidCategoryIds } from '../user/user.service';
 import { fileUploader } from '../../helper/fileUploder';
+import { resolveCanonicalLocation } from '../countery/countery.util';
 
 const registerUser = async (
   payload: Partial<IUser> & {
@@ -37,12 +38,21 @@ const registerUser = async (
     if (payload.role && !exist.roles?.includes(payload.role)) {
       exist.roles = [...(exist.roles ?? [exist.role]), payload.role];
     }
+    if (payload.role && payload.role !== exist.role) {
+      exist.role = payload.role;
+    }
     if (payload.firstName) exist.firstName = payload.firstName;
     if (payload.lastName !== undefined) exist.lastName = payload.lastName;
     if (payload.gender !== undefined) exist.gender = payload.gender;
     if (payload.bio !== undefined) exist.bio = payload.bio;
-    if (payload.countery !== undefined) exist.countery = payload.countery;
-    if (payload.city !== undefined) exist.city = payload.city;
+    if (payload.countery !== undefined || payload.city !== undefined) {
+      const canonical = await resolveCanonicalLocation(
+        payload.countery,
+        payload.city,
+      );
+      if (canonical.countery !== undefined) exist.countery = canonical.countery;
+      if (canonical.city !== undefined) exist.city = canonical.city;
+    }
     if (payload.neighborhoods !== undefined) {
       exist.neighborhoods = payload.neighborhoods;
     }
@@ -73,6 +83,15 @@ const registerUser = async (
       (payload as any).onboardedBy = ambassadorUser._id;
       (payload as any).onboardingSource = 'city_ambassador';
     }
+  }
+
+  if (payload.countery !== undefined || payload.city !== undefined) {
+    const canonical = await resolveCanonicalLocation(
+      payload.countery,
+      payload.city,
+    );
+    if (canonical.countery !== undefined) payload.countery = canonical.countery;
+    if (canonical.city !== undefined) payload.city = canonical.city;
   }
 
   const user = await User.create(payload);

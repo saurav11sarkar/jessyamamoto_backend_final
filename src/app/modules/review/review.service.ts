@@ -22,7 +22,16 @@ const createReview = async (userId: string, payload: IReview) => {
     throw new AppError(400, 'You cannot review yourself');
   }
 
-  if (user.role === reviewedUser.role) {
+  const reviewerRoles = user.roles?.length ? user.roles : [user.role];
+  const reviewedRoles = reviewedUser.roles?.length
+    ? reviewedUser.roles
+    : [reviewedUser.role];
+
+  const isOppositeRolePair =
+    (reviewerRoles.includes('find care') && reviewedRoles.includes('find job')) ||
+    (reviewerRoles.includes('find job') && reviewedRoles.includes('find care'));
+
+  if (!isOppositeRolePair) {
     throw new AppError(400, 'You can only review users of the opposite role');
   }
 
