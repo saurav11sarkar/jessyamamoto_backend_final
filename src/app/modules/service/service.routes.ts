@@ -21,7 +21,7 @@ router.get(
 
 router.get(
   '/service-base-user/:categoryId',
-  auth(userRole['find care'], userRole['find job']),
+  serviceAuth(userRole['find care'], userRole['find job']),
   serviceController.serviceBaseUserController,
 );
 
