@@ -4,6 +4,7 @@ import { fileUploader } from '../../helper/fileUploder';
 import pagination, { IOption } from '../../helper/pagenation';
 import Payment from '../payment/payment.model';
 import Service from '../service/service.model';
+import Review from '../review/review.model';
 import { IUser } from './user.interface';
 import User from './user.model';
 import { normalizeUserLanguages } from './user.language.util';
@@ -178,6 +179,36 @@ const deleteUserById = async (id: string) => {
   if (!result) {
     throw new AppError(404, 'User not found');
   }
+
+  // Clean up reviews authored by this user, and remove references to them
+  // from the reviewed users' reviewRatting lists, so no other profile is
+  // left pointing at a review whose author no longer exists.
+  const authoredReviews = await Review.find({ userId: id }).select('_id jobUserId');
+  if (authoredReviews.length) {
+    await Promise.all(
+      authoredReviews.map((review) =>
+        User.findByIdAndUpdate(review.jobUserId, {
+          $pull: { reviewRatting: review._id },
+        }),
+      ),
+    );
+    await Review.deleteMany({ userId: id });
+  }
+
+  // Also drop any reviews written about this user, and remove the
+  // reviewers' references to them.
+  const receivedReviews = await Review.find({ jobUserId: id }).select('_id userId');
+  if (receivedReviews.length) {
+    await Promise.all(
+      receivedReviews.map((review) =>
+        User.findByIdAndUpdate(review.userId, {
+          $pull: { givenReviewRatting: review._id },
+        }),
+      ),
+    );
+    await Review.deleteMany({ jobUserId: id });
+  }
+
   return result;
 };
 
