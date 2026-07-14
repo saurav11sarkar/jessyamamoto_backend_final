@@ -38,7 +38,12 @@ const getAllSubscriptions = async (params: any, options: IOption) => {
     });
   }
 
-  const whereCondition = andCondition.length > 0 ? { $and: andCondition } : {};
+  andCondition.push({
+    title: { $not: /child/i },
+    type: { $not: /child/i },
+  });
+
+  const whereCondition = { $and: andCondition };
 
   const result = await Subscription.find(whereCondition)
     .skip(skip)

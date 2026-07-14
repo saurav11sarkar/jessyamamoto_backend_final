@@ -22,6 +22,20 @@ const weekDays = [
   'Saturday',
 ];
 
+const isBlockedSubscription = (subscription: { title?: string; type?: string }) =>
+  `${subscription.type || ''} ${subscription.title || ''}`
+    .toLowerCase()
+    .includes('child');
+
+const isChinaLocation = (...values: unknown[]) =>
+  values.some((value) => {
+    const text = String(value || '').toLowerCase();
+    return text.includes('china');
+  });
+
+const isTutoringCategory = (category: { name?: string }) =>
+  String(category.name || '').toLowerCase().includes('tutor');
+
 const getAvailableDays = (available?: string | string[]) => {
   if (!available) return null;
 
@@ -145,6 +159,9 @@ const registerServiceAndSubscription = async (
   if (!payload.categoryId && effectiveSubscriptionId) {
     const subscriptionDoc = await Subscription.findById(effectiveSubscriptionId);
     if (!subscriptionDoc) throw new AppError(404, 'Subscription not found');
+    if (isBlockedSubscription(subscriptionDoc)) {
+      throw new AppError(400, 'This membership plan is not available');
+    }
 
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -197,6 +214,23 @@ const registerServiceAndSubscription = async (
     throw new AppError(400, 'Invalid categoryId');
   }
   const categoryObjectId = new mongoose.Types.ObjectId(payload.categoryId);
+  const requestedCategoryDoc = await Category.findById(categoryObjectId);
+  if (!requestedCategoryDoc) throw new AppError(404, 'Category not found');
+
+  if (
+    isTutoringCategory(requestedCategoryDoc) &&
+    isChinaLocation(
+      payload.country,
+      payload.countery,
+      payload.city,
+      payload.location,
+      user.countery,
+      user.city,
+      user.location,
+    )
+  ) {
+    throw new AppError(400, 'Tutoring is not available in China');
+  }
 
   const existingInCategory = await Service.findOne({
     userId: user._id,
@@ -225,9 +259,6 @@ const registerServiceAndSubscription = async (
     if (!gender) {
       throw new AppError(400, 'gender is required');
     }
-
-    const categoryDoc = await Category.findById(categoryObjectId);
-    if (!categoryDoc) throw new AppError(404, 'Category not found');
 
     const loc = payload.location || payload.city || '';
 
@@ -302,6 +333,9 @@ const registerServiceAndSubscription = async (
 
   const subscriptionDoc = await Subscription.findById(effectiveSubscriptionId);
   if (!subscriptionDoc) throw new AppError(404, 'Subscription not found');
+  if (isBlockedSubscription(subscriptionDoc)) {
+    throw new AppError(400, 'This membership plan is not available');
+  }
 
   const checkoutSession = await stripe.checkout.sessions.create({
     mode: 'payment',
@@ -626,6 +660,22 @@ const serviceBaseUser = async (
   // ✅ Category check
   const category = await Category.findById(categoryId);
   if (!category) throw new AppError(404, 'Category not found');
+  if (category.isActive === false) {
+    return {
+      meta: { total: 0, page, limit },
+      data: [],
+    };
+  }
+
+  if (
+    isTutoringCategory(category) &&
+    isChinaLocation(params.searchTerm, params.location, params.countery, params.city)
+  ) {
+    return {
+      meta: { total: 0, page, limit },
+      data: [],
+    };
+  }
 
   // ✅ Role validation
   if (!role) {
@@ -859,6 +909,22 @@ const serviceUserBaseUser = async (
   // Category check
   const category = await Category.findById(categoryId);
   if (!category) throw new AppError(404, 'Category not found');
+  if (category.isActive === false) {
+    return {
+      meta: { total: 0, page, limit },
+      data: [],
+    };
+  }
+
+  if (
+    isTutoringCategory(category) &&
+    isChinaLocation(params.searchTerm, params.location, params.countery, params.city)
+  ) {
+    return {
+      meta: { total: 0, page, limit },
+      data: [],
+    };
+  }
 
   // Opposite role
   let targetRole: string;

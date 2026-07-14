@@ -12,6 +12,8 @@ const BookingSchema = new Schema(
     day: { type: String, required: true },
     date: { type: String, required: true },
     time: { type: String, required: true },
+    endDate: { type: String },
+    endTime: { type: String },
     status: {
       type: String,
       enum: ['pending', 'accepted', 'completed', 'cancelled'],

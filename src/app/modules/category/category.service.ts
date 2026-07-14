@@ -43,9 +43,10 @@ const createCategory = async (
 
 const getAllCategory = async (params: any, options: IOption) => {
   const { page, limit, skip, sortBy, sortOrder } = pagination(options);
-  const { searchTerm, ...filterData } = params;
+  const { searchTerm, includeInactive, ...filterData } = params;
 
-  const andCondition: any[] = [];
+  const andCondition: any[] =
+    includeInactive === 'true' ? [] : [{ isActive: { $ne: false } }];
   const userSearchableFields = ['name'];
 
   if (searchTerm) {
@@ -69,7 +70,7 @@ const getAllCategory = async (params: any, options: IOption) => {
   const result = await Category.find(whereCondition)
     .skip(skip)
     .limit(limit)
-    .sort({ [sortBy]: sortOrder } as any);
+    .sort({ [sortBy || 'order']: sortOrder || 'asc', createdAt: 1 } as any);
 
   if (!result) {
     throw new AppError(404, 'Users not found');

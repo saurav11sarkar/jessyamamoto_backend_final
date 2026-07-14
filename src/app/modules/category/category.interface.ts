@@ -5,6 +5,8 @@ export interface ICategory {
   name: string;
   description?: string;
   banner?: string[];
+  isActive?: boolean;
+  order?: number;
   findCareUser?: Types.ObjectId[];
   findJobUser?: Types.ObjectId[];
 }

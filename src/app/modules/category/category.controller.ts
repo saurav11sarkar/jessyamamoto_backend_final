@@ -23,7 +23,7 @@ const createCategory = catchAsync(async (req, res) => {
 });
 
 const getAllCategory = catchAsync(async (req, res) => {
-  const filters = pick(req.query, ['searchTerm', 'name']);
+  const filters = pick(req.query, ['searchTerm', 'name', 'includeInactive']);
   const options = pick(req.query, ['limit', 'page', 'sortBy', 'sortOrder']);
   const result = await CategoryService.getAllCategory(filters, options);
   sendResponse(res, {

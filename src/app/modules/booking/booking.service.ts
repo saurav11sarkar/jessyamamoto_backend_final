@@ -158,6 +158,8 @@ const createBooking = async (payload: {
   day: string;
   date: string;
   time: string;
+  endDate?: string;
+  endTime?: string;
   userId: string;
 }) => {
   // DATE VALIDATION
@@ -166,6 +168,10 @@ const createBooking = async (payload: {
   }
   validateBookingDate(payload.date);
   validateDayAndDate(payload.day, payload.date);
+  if (payload.endDate && !isValidDate(payload.endDate)) {
+    throw new AppError(400, 'Invalid endDate format. Use YYYY-MM-DD');
+  }
+  if (payload.endDate) validateBookingDate(payload.endDate);
 
   // OBJECT ID VALIDATION
   if (!mongoose.Types.ObjectId.isValid(payload.serviceId)) {
@@ -229,6 +235,43 @@ const createBooking = async (payload: {
     );
   }
 
+  if (payload.endTime) {
+    const endOk = isTimeWithinRange(
+      payload.endTime,
+      daySlot.startTime,
+      daySlot.endTime,
+    );
+    if (!endOk) {
+      throw new AppError(
+        400,
+        `Service is available ${daySlot.startTime} - ${daySlot.endTime} on ${payload.day}`,
+      );
+    }
+
+    const startMinutes = parseTimeToMinutes(payload.time);
+    const endMinutes = parseTimeToMinutes(payload.endTime);
+    if (startMinutes === null || endMinutes === null) {
+      throw new AppError(400, 'Invalid booking time');
+    }
+
+    const startsAt = new Date(`${payload.date}T${payload.time}`);
+    const effectiveEndDate =
+      payload.endDate ||
+      (endMinutes <= startMinutes
+        ? new Date(new Date(payload.date).getTime() + 24 * 60 * 60 * 1000)
+            .toISOString()
+            .slice(0, 10)
+        : payload.date);
+    const endsAt = new Date(`${effectiveEndDate}T${payload.endTime}`);
+
+    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+      throw new AppError(400, 'Invalid booking time window');
+    }
+    if (endsAt <= startsAt) {
+      throw new AppError(400, 'End time must be after start time');
+    }
+  }
+
   // SLOT CHECK ✅
   const available = await isSlotAvailable(
     payload.serviceId,
@@ -282,6 +325,8 @@ const createBooking = async (payload: {
         day: payload.day,
         date: payload.date,
         time: payload.time,
+        endDate: payload.endDate || '',
+        endTime: payload.endTime || '',
         paymentType: 'booking',
         trustedBookingFee: trustedBookingFeeCents.toString(),
         caregiverRate: totalAmountCents.toString(),
@@ -299,6 +344,8 @@ const createBooking = async (payload: {
           day: payload.day,
           date: payload.date,
           time: payload.time,
+          endDate: payload.endDate,
+          endTime: payload.endTime,
           location: service.location,
           status: 'pending',
         },

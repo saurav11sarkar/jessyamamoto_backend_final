@@ -7,6 +7,8 @@ const CategorySchema = new mongoose.Schema<ICategory>(
     name: { type: String, required: true, unique: true, trim: true },
     description: { type: String },
     banner: [{ type: String }],
+    isActive: { type: Boolean, default: true },
+    order: { type: Number, default: 0 },
     findCareUser: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     findJobUser: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   },

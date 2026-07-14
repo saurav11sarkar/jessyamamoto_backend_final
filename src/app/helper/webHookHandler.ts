@@ -164,11 +164,14 @@ const webHookHandler = async (req: Request, res: Response) => {
 
           // Calculate expiry based on plan type
           let months = 1;
+          let days = 0;
           const subType = (subscription.type || '').toLowerCase();
           if (subType === 'yearly' || subType === 'annual') months = 12;
           else if (subType === '6month' || subType === '6_month' || subType === 'semi_annual') months = 6;
+          else if (subType === 'weekly') days = 7;
           const expiry = new Date();
-          expiry.setMonth(expiry.getMonth() + months);
+          if (days > 0) expiry.setDate(expiry.getDate() + days);
+          else expiry.setMonth(expiry.getMonth() + months);
 
           user.isSubscription = true;
           user.subscription = subscription._id;
