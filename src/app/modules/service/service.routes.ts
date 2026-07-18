@@ -33,7 +33,7 @@ router.get(
 
 router.get(
   '/:userId',
-  auth(userRole['find care'], userRole['find job']),
+  serviceAuth(userRole['find care'], userRole['find job']),
   serviceController.singleUserService,
 );
 
