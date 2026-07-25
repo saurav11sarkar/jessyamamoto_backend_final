@@ -4,6 +4,7 @@ import Category from '../app/modules/category/category.model';
 import Service from '../app/modules/service/service.model';
 import Subscription from '../app/modules/subscription/subscription.model';
 import User from '../app/modules/user/user.model';
+import { badgeService } from '../app/modules/badge/badge.service';
 
 const TEST_PASSWORD = 'ClientTest123!';
 
@@ -196,6 +197,8 @@ const seed = async () => {
     { new: true, upsert: true, setDefaultsOnInsert: true },
   );
 
+  const defaultBadges = await badgeService.seedDefaults();
+
   const memberExpiry = new Date();
   memberExpiry.setMonth(memberExpiry.getMonth() + 1);
 
@@ -265,6 +268,34 @@ const seed = async () => {
   await upsertPartnerProfile(partnerB._id, {
     neighborhoods: 'Sukhumvit, Thonglor, Phrom Phong',
   });
+
+  const badgeByKey = new Map(defaultBadges.map((badge: any) => [badge.key, badge]));
+  for (const key of ['id_verified', 'background_checked', 'cpr_certified', 'hotel_babysitting']) {
+    const badge = badgeByKey.get(key) as any;
+    if (badge) {
+      await badgeService.assign({
+        userId: partnerA._id.toString(),
+        badgeId: badge._id.toString(),
+        validThrough: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 10),
+        note: 'Seeded for client marketplace testing.',
+      });
+    }
+  }
+  for (const key of ['id_verified', 'first_aid', 'toddler_care', 'language_support']) {
+    const badge = badgeByKey.get(key) as any;
+    if (badge) {
+      await badgeService.assign({
+        userId: partnerB._id.toString(),
+        badgeId: badge._id.toString(),
+        validThrough: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 10),
+        note: 'Seeded for client marketplace testing.',
+      });
+    }
+  }
 
   const serviceA = await upsertService({
     userId: partnerA._id,

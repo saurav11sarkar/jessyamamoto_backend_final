@@ -59,6 +59,15 @@ export interface IUser {
   /** Find care: uploaded certification document image URLs. */
   galary?: string[];
   certifications?: string[];
+  badges?: Array<{
+    badge: Types.ObjectId;
+    awardedBy?: Types.ObjectId;
+    verified?: boolean;
+    validThrough?: Date;
+    note?: string;
+    awardedAt?: Date;
+    revokedAt?: Date;
+  }>;
   neighborhoods?: string;
   ambassadorId?: string;
   onboardedBy?: Types.ObjectId;

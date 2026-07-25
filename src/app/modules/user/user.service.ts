@@ -215,7 +215,9 @@ const deleteUserById = async (id: string) => {
 const profile = async (id: string) => {
   const result = await User.findById(id)
     .populate('totalBooking')
-    .populate('givenReviewRatting');
+    .populate('givenReviewRatting')
+    .populate('badges.badge')
+    .populate('badges.awardedBy', 'firstName lastName email');
   if (!result) {
     throw new AppError(404, 'User not found');
   }

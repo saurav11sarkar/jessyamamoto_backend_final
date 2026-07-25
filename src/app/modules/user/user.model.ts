@@ -6,6 +6,7 @@ import {
   IUserLanguage,
   normalizeUserLanguages,
 } from './user.language.util';
+import { userBadgeSchema } from '../badge/badge.model';
 
 const userLanguageSchema = new mongoose.Schema(
   {
@@ -134,6 +135,7 @@ const userSchema = new mongoose.Schema<IUser>(
     professionalSkill: [{ type: String }],
     perferences: [{ type: String }],
     certifications: [{ type: String }],
+    badges: [userBadgeSchema],
     galary: [{ type: String }],
     neighborhoods: { type: String },
     ambassadorId: { type: String, sparse: true, unique: true },

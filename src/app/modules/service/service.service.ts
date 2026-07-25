@@ -1128,13 +1128,23 @@ const singleUserService = async (userId: string) => {
     .populate({
       path: 'userId',
       select: '-password -otp -otpExpiry',
-      populate: {
-        path: 'reviewRatting',
-        populate: {
-          path: 'userId',
-          select: 'firstName lastName profileImage service',
+      populate: [
+        {
+          path: 'reviewRatting',
+          populate: {
+            path: 'userId',
+            select: 'firstName lastName profileImage service',
+          },
         },
-      },
+        {
+          path: 'badges.badge',
+          select: 'title description issuer key isActive',
+        },
+        {
+          path: 'badges.awardedBy',
+          select: 'firstName lastName email',
+        },
+      ],
     })
     .populate('categoryId')
     .lean();
