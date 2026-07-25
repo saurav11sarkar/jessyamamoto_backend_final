@@ -13,7 +13,7 @@ const paymentSchema = new mongoose.Schema<IPayment>(
     status: {
       type: String,
       required: true,
-      enum: ['pending', 'completed', 'failed', 'refunded'],
+      enum: ['pending', 'authorized', 'completed', 'failed', 'refunded'],
     },
     paymentType: {
       type: String,
@@ -35,6 +35,11 @@ const paymentSchema = new mongoose.Schema<IPayment>(
     },
     caregiverRate: {
       type: Number,
+    },
+    idempotencyKey: { type: String },
+    captureMethod: {
+      type: String,
+      enum: ['automatic', 'manual'],
     },
     pendingServiceRegistration: {
       type: mongoose.Schema.Types.Mixed,

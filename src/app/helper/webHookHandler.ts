@@ -138,7 +138,8 @@ const webHookHandler = async (req: Request, res: Response) => {
           return res.status(200).json({ received: true });
         }
 
-        payment.status = 'completed';
+        payment.status =
+          payment.captureMethod === 'manual' ? 'authorized' : 'completed';
         payment.stripePaymentIntentId = session.payment_intent as string;
         await payment.save();
 
@@ -190,8 +191,9 @@ const webHookHandler = async (req: Request, res: Response) => {
             return res.status(200).json({ received: true });
           }
 
-          // Update booking status from 'pending' to 'accepted' after payment
-          booking.status = 'accepted';
+          booking.holdExpiresAt = null;
+          booking.status =
+            booking.bookingMode === 'instant' ? 'confirmed' : 'pending';
           await booking.save();
 
         }

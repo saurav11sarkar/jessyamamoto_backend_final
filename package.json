@@ -10,6 +10,7 @@
     "prettier:fix": "prettier --write src",
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "seed:client-test": "ts-node src/scripts/seed-client-test-data.ts",
     "build": "tsc",
     "start": "node ./dist/server.js",
     "build-and-start": "npm run build && npm run start"

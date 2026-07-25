@@ -18,7 +18,7 @@ export interface IPayment {
   stripeSessionId: string;
   amount: number;
   currency: string;
-  status: 'pending' | 'completed' | 'failed' | 'refunded';
+  status: 'pending' | 'authorized' | 'completed' | 'failed' | 'refunded';
   paymentType: 'subscription' | 'booking';
   userType: 'findJob' | 'findCare';
   createdAt?: Date;
@@ -28,6 +28,8 @@ export interface IPayment {
   adminFree?: number;
   serviceProviderFree?: number;
   caregiverRate?: number;
+  idempotencyKey?: string;
+  captureMethod?: 'automatic' | 'manual';
   pendingServiceRegistration?: IPendingServiceRegistration;
   providerPayoutStatus?: 'unpaid' | 'processing' | 'paid' | 'direct_cash';
   providerPaidDate?: Date;

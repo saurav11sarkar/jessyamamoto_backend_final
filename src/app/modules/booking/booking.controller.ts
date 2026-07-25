@@ -7,7 +7,26 @@ import pick from '../../helper/pick';
 // ===================== Create Booking =====================
 const createBookingController = catchAsync(
   async (req: Request, res: Response) => {
-    const { serviceId, day, date, time, endDate, endTime } = req.body;
+    const {
+      serviceId,
+      day,
+      date,
+      time,
+      endDate,
+      endTime,
+      bookingMode,
+      hotelName,
+      childCount,
+      childAges,
+      emergencyContactName,
+      emergencyContactPhone,
+      allergies,
+      medicalNotes,
+      instructions,
+      location,
+      timezone,
+      idempotencyKey,
+    } = req.body;
 
     if (!serviceId || !day || !date || !time) {
       return sendResponse(res, {
@@ -25,6 +44,18 @@ const createBookingController = catchAsync(
       time,
       endDate,
       endTime,
+      bookingMode,
+      hotelName,
+      childCount,
+      childAges,
+      emergencyContactName,
+      emergencyContactPhone,
+      allergies,
+      medicalNotes,
+      instructions,
+      location,
+      timezone,
+      idempotencyKey,
       userId: req.user!.id,
     });
 

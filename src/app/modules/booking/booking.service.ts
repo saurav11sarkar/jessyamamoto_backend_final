@@ -4,6 +4,7 @@ import AppError from '../../error/appError';
 import Service from '../service/service.model';
 import User from '../user/user.model';
 import Payment from '../payment/payment.model';
+import Subscription from '../subscription/subscription.model';
 import pagination, { IOption } from '../../helper/pagenation';
 import mongoose from 'mongoose';
 import Stripe from 'stripe';
@@ -11,18 +12,32 @@ import config from '../../config';
 
 const stripe = new Stripe(config.stripe.secretKey!);
 
+const NON_MEMBER_BOOKING_FEE_PERCENT = 20;
+const NON_MEMBER_BOOKING_FEE_MINIMUM = 3.5;
+const MEMBER_BOOKING_FEE_PERCENT = 8.88;
+const MEMBER_BOOKING_FEE_MINIMUM = 1.25;
+const SLOT_HOLD_MINUTES = 15;
+
 const withBookingProgress = <T extends { status?: string }>(booking: T) => {
-  const status = String(booking.status || 'pending').toLowerCase();
-  const totalSteps = 3;
+  const status = String(booking.status || 'draft').toLowerCase();
+  const totalSteps = 4;
 
   const progressMap: Record<
     string,
     { step: number; label: string; isTerminal: boolean }
   > = {
-    pending: { step: 1, label: 'Request pending', isTerminal: false },
-    accepted: { step: 2, label: 'Accepted by caregiver', isTerminal: false },
-    completed: { step: 3, label: 'Booking completed', isTerminal: true },
+    draft: { step: 0, label: 'Draft', isTerminal: false },
+    pending: {
+      step: 1,
+      label: 'Pending payment or partner acceptance',
+      isTerminal: false,
+    },
+    confirmed: { step: 3, label: 'Booking confirmed', isTerminal: false },
+    accepted: { step: 3, label: 'Booking confirmed', isTerminal: false },
+    completed: { step: 4, label: 'Booking completed', isTerminal: true },
+    declined: { step: 0, label: 'Booking declined', isTerminal: true },
     cancelled: { step: 0, label: 'Booking cancelled', isTerminal: true },
+    refunded: { step: 0, label: 'Booking refunded', isTerminal: true },
   };
 
   const progress =
@@ -45,7 +60,29 @@ const isValidDate = (dateString: string): boolean => {
 };
 
 // ===================== Helper: Validate Day and Date Match =====================
-const normalizeDay = (d: string) => (d || '').trim().toLowerCase();
+const normalizeDay = (d: string) => {
+  const value = (d || '').trim().toLowerCase();
+  const dayMap: Record<string, string> = {
+    sun: 'sunday',
+    sunday: 'sunday',
+    mon: 'monday',
+    monday: 'monday',
+    tue: 'tuesday',
+    tues: 'tuesday',
+    tuesday: 'tuesday',
+    wed: 'wednesday',
+    wednesday: 'wednesday',
+    thu: 'thursday',
+    thur: 'thursday',
+    thurs: 'thursday',
+    thursday: 'thursday',
+    fri: 'friday',
+    friday: 'friday',
+    sat: 'saturday',
+    saturday: 'saturday',
+  };
+  return dayMap[value] || value;
+};
 
 const validateDayAndDate = (day: string, date: string): void => {
   const bookingDate = new Date(date);
@@ -128,27 +165,132 @@ const isTimeWithinRange = (time: string, start: string, end: string) => {
   return t >= s || t <= e;
 };
 
+const getBookingDurationHours = (
+  date: string,
+  time: string,
+  endDate?: string,
+  endTime?: string,
+) => {
+  if (!endTime) return 1;
+  const startMinutes = parseTimeToMinutes(time);
+  const endMinutes = parseTimeToMinutes(endTime);
+  if (startMinutes === null || endMinutes === null) return 1;
+
+  const effectiveEndMinutes =
+    endMinutes <= startMinutes && endDate && endDate !== date
+      ? endMinutes + 24 * 60
+      : endMinutes;
+  const minutes = Math.max(effectiveEndMinutes - startMinutes, 60);
+  return Number((minutes / 60).toFixed(2));
+};
+
+const getBookingPricing = async (
+  user: any,
+  hourlyRate: number,
+  durationHours: number,
+) => {
+  const hasActiveMembership =
+    user.isSubscription === true &&
+    user.subscriptionExpiry &&
+    new Date(user.subscriptionExpiry) > new Date();
+
+  let bookingFeePercent = NON_MEMBER_BOOKING_FEE_PERCENT;
+  let bookingFeeMinimum = NON_MEMBER_BOOKING_FEE_MINIMUM;
+  let membershipType = 'non-member';
+  let membershipPrice = 0;
+
+  if (hasActiveMembership) {
+    const subscription = user.subscription
+      ? await Subscription.findById(user.subscription).lean()
+      : null;
+    bookingFeePercent =
+      Number(subscription?.bookingFeePercent) || MEMBER_BOOKING_FEE_PERCENT;
+    bookingFeeMinimum =
+      Number(subscription?.bookingFeeMinimum) || MEMBER_BOOKING_FEE_MINIMUM;
+    membershipType = subscription?.type || 'member';
+    membershipPrice = Number(subscription?.price || 0);
+  }
+
+  const serviceSubtotal = Number((hourlyRate * durationHours).toFixed(2));
+  const percentFee = serviceSubtotal * (bookingFeePercent / 100);
+  const trustedBookingFee = Number(
+    Math.max(percentFee, bookingFeeMinimum).toFixed(2),
+  );
+
+  return {
+    hourlyRate,
+    durationHours,
+    serviceSubtotal,
+    bookingFeePercent,
+    bookingFeeMinimum,
+    trustedBookingFee,
+    currency: 'usd',
+    membershipType,
+    membershipPrice,
+    payNowTotal: trustedBookingFee,
+    payPartnerLater: serviceSubtotal,
+  };
+};
+
 // ===================== Helper: Check Time Slot Availability =====================
 const isSlotAvailable = async (
   serviceId: string,
   day: string,
   date: string,
   time: string,
+  endDate?: string,
+  endTime?: string,
   excludeBookingId?: string,
 ): Promise<boolean> => {
   const query: any = {
     serviceId,
-    day,
     date,
-    time,
-    status: { $in: ['pending', 'accepted'] },
+    $or: [
+      { status: { $in: ['pending', 'confirmed', 'accepted'] } },
+      { status: 'draft', holdExpiresAt: { $gt: new Date() } },
+    ],
   };
 
   if (excludeBookingId) {
     query._id = { $ne: new mongoose.Types.ObjectId(excludeBookingId) };
   }
 
-  const conflict = await Booking.findOne(query);
+  const sameDateBookings = await Booking.find(query).lean();
+  const requestedStart = parseTimeToMinutes(time);
+  const requestedEnd = parseTimeToMinutes(endTime || time);
+
+  if (requestedStart === null) return false;
+
+  const requestedEndMinutes =
+    requestedEnd === null
+      ? requestedStart + 60
+      : requestedEnd <= requestedStart && endDate && endDate !== date
+        ? requestedEnd + 24 * 60
+        : requestedEnd;
+
+  const conflict = sameDateBookings.some((booking: any) => {
+    if (normalizeDay(booking.day) !== normalizeDay(day)) return false;
+
+    const existingStart = parseTimeToMinutes(booking.time);
+    const existingEnd = parseTimeToMinutes(booking.endTime || booking.time);
+
+    if (existingStart === null) return false;
+
+    const existingEndMinutes =
+      existingEnd === null
+        ? existingStart + 60
+        : existingEnd <= existingStart &&
+            booking.endDate &&
+            booking.endDate !== booking.date
+          ? existingEnd + 24 * 60
+          : existingEnd;
+
+    return (
+      requestedStart < existingEndMinutes &&
+      requestedEndMinutes > existingStart
+    );
+  });
+
   return !conflict;
 };
 
@@ -161,6 +303,18 @@ const createBooking = async (payload: {
   endDate?: string;
   endTime?: string;
   userId: string;
+  bookingMode?: 'request' | 'instant';
+  hotelName?: string;
+  childCount?: number;
+  childAges?: string[];
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  allergies?: string;
+  medicalNotes?: string;
+  instructions?: string;
+  location?: string;
+  timezone?: string;
+  idempotencyKey?: string;
 }) => {
   // DATE VALIDATION
   if (!isValidDate(payload.date)) {
@@ -278,6 +432,8 @@ const createBooking = async (payload: {
     payload.day,
     payload.date,
     payload.time,
+    payload.endDate,
+    payload.endTime,
   );
   if (!available) {
     throw new AppError(409, 'This time slot is already booked for that date');
@@ -289,52 +445,28 @@ const createBooking = async (payload: {
     throw new AppError(400, 'Service hourRate is not set');
   }
 
-  const totalAmountCents = Math.round(hourRate * 100);
-  const isMember = user.isSubscription === true && user.subscriptionExpiry && new Date(user.subscriptionExpiry) > new Date();
-  const platformFeeRate = isMember ? 0.125 : 0.25;
-  const trustedBookingFeeCents = Math.round(totalAmountCents * platformFeeRate);
+  const durationHours = getBookingDurationHours(
+    payload.date,
+    payload.time,
+    payload.endDate,
+    payload.endTime,
+  );
+  const pricingSnapshot = await getBookingPricing(user, hourRate, durationHours);
+  const trustedBookingFeeCents = Math.round(
+    pricingSnapshot.trustedBookingFee * 100,
+  );
+  const bookingMode = payload.bookingMode === 'instant' ? 'instant' : 'request';
+  const captureMethod = bookingMode === 'request' ? 'manual' : 'automatic';
+  const idempotencyKey =
+    payload.idempotencyKey ||
+    `booking:${payload.userId}:${payload.serviceId}:${payload.date}:${payload.time}:${payload.endTime || ''}`;
+  const holdExpiresAt = new Date(Date.now() + SLOT_HOLD_MINUTES * 60 * 1000);
 
   // TRANSACTION ✅
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const checkoutSession = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      payment_method_types: ['card'],
-      customer_email: user.email,
-      line_items: [
-        {
-          price_data: {
-            currency: 'usd',
-            unit_amount: trustedBookingFeeCents,
-            product_data: {
-              name: `Trusted Booking Fee: ${service.firstName} ${service.lastName}`,
-              description: `Booking fee for ${payload.day}, ${payload.date} at ${payload.time}. Caregiver rate: $${hourRate}/hr (paid directly to caregiver).`,
-            },
-          },
-          quantity: 1,
-        },
-      ],
-      success_url: config.stripeCheckoutUrls.bookingSuccessUrl,
-      cancel_url: config.stripeCheckoutUrls.bookingCancelUrl,
-      metadata: {
-        userId: payload.userId,
-        serviceId: payload.serviceId,
-        serviceProviderId: provider._id.toString(),
-        day: payload.day,
-        date: payload.date,
-        time: payload.time,
-        endDate: payload.endDate || '',
-        endTime: payload.endTime || '',
-        paymentType: 'booking',
-        trustedBookingFee: trustedBookingFeeCents.toString(),
-        caregiverRate: totalAmountCents.toString(),
-        platformFeeRate: (platformFeeRate * 100).toString(),
-        isMember: isMember ? 'true' : 'false',
-      },
-    });
-
     const [createdBooking] = await Booking.create(
       [
         {
@@ -346,11 +478,72 @@ const createBooking = async (payload: {
           time: payload.time,
           endDate: payload.endDate,
           endTime: payload.endTime,
-          location: service.location,
-          status: 'pending',
+          bookingMode,
+          location: payload.location || service.location,
+          hotelName: payload.hotelName,
+          childCount: payload.childCount,
+          childAges: payload.childAges,
+          emergencyContactName: payload.emergencyContactName,
+          emergencyContactPhone: payload.emergencyContactPhone,
+          allergies: payload.allergies,
+          medicalNotes: payload.medicalNotes,
+          instructions: payload.instructions,
+          timezone: payload.timezone,
+          holdExpiresAt,
+          pricingSnapshot,
+          status: 'draft',
         },
       ],
       { session },
+    );
+
+    const checkoutSession = await stripe.checkout.sessions.create(
+      {
+        mode: 'payment',
+        payment_method_types: ['card'],
+        customer_email: user.email,
+        payment_intent_data: {
+          capture_method: captureMethod,
+          metadata: {
+            bookingId: createdBooking!._id.toString(),
+            paymentType: 'booking',
+            bookingMode,
+          },
+        },
+        line_items: [
+          {
+            price_data: {
+              currency: pricingSnapshot.currency,
+              unit_amount: trustedBookingFeeCents,
+              product_data: {
+                name: `JetSet Trusted Booking Fee: ${service.firstName} ${service.lastName}`,
+                description: `Pay now: JetSet Trusted Booking Fee. Pay partner later: $${pricingSnapshot.payPartnerLater} directly to the partner at service time.`,
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: config.stripeCheckoutUrls.bookingSuccessUrl,
+        cancel_url: config.stripeCheckoutUrls.bookingCancelUrl,
+        metadata: {
+          userId: payload.userId,
+          serviceId: payload.serviceId,
+          bookingId: createdBooking!._id.toString(),
+          serviceProviderId: provider._id.toString(),
+          day: payload.day,
+          date: payload.date,
+          time: payload.time,
+          endDate: payload.endDate || '',
+          endTime: payload.endTime || '',
+          paymentType: 'booking',
+          bookingMode,
+          trustedBookingFee: trustedBookingFeeCents.toString(),
+          caregiverRate: Math.round(pricingSnapshot.payPartnerLater * 100).toString(),
+          platformFeeRate: pricingSnapshot.bookingFeePercent.toString(),
+          membershipType: pricingSnapshot.membershipType,
+        },
+      },
+      { idempotencyKey },
     );
 
     await Payment.create(
@@ -369,6 +562,8 @@ const createBooking = async (payload: {
           adminFree: trustedBookingFeeCents / 100,
           serviceProviderFree: 0,
           caregiverRate: hourRate,
+          idempotencyKey,
+          captureMethod,
           providerPayoutStatus: 'direct_cash',
         },
       ],
@@ -386,6 +581,9 @@ const createBooking = async (payload: {
       booking: createdBooking,
       checkoutUrl: checkoutSession.url,
       sessionId: checkoutSession.id,
+      paymentDetails: {
+        ...pricingSnapshot,
+      },
     };
   } catch (e) {
     await session.abortTransaction();
@@ -438,7 +636,7 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
     }
   }
 
-  if (['completed', 'cancelled'].includes(booking.status)) {
+  if (['completed', 'cancelled', 'declined', 'refunded'].includes(booking.status)) {
     throw new AppError(400, `Cannot update ${booking.status} booking`);
   }
 
@@ -478,6 +676,8 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
       newDay,
       newDate,
       newTime,
+      payload.endDate || booking.endDate,
+      payload.endTime || booking.endTime,
       id, // exclude this booking
     );
     if (!available) {
@@ -487,8 +687,11 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
 
   // Status transition validation (keep your logic)
   if (payload.status) {
+    if (payload.status === 'accepted') payload.status = 'confirmed';
     const validTransitions: { [key: string]: string[] } = {
-      pending: ['accepted', 'cancelled'],
+      draft: ['pending', 'cancelled'],
+      pending: ['confirmed', 'declined', 'cancelled'],
+      confirmed: ['completed', 'cancelled'],
       accepted: ['completed', 'cancelled'],
     };
 
@@ -498,6 +701,32 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
         400,
         `Cannot change status from ${booking.status} to ${payload.status}`,
       );
+    }
+
+    if (payload.status === 'confirmed') {
+      const payment = await Payment.findOne({ booking: booking._id });
+      if (
+        payment?.captureMethod === 'manual' &&
+        payment.stripePaymentIntentId &&
+        payment.status === 'authorized'
+      ) {
+        await stripe.paymentIntents.capture(payment.stripePaymentIntentId);
+        payment.status = 'completed';
+        await payment.save();
+      }
+    }
+
+    if (payload.status === 'declined') {
+      const payment = await Payment.findOne({ booking: booking._id });
+      if (
+        payment?.captureMethod === 'manual' &&
+        payment.stripePaymentIntentId &&
+        payment.status === 'authorized'
+      ) {
+        await stripe.paymentIntents.cancel(payment.stripePaymentIntentId);
+        payment.status = 'failed';
+        await payment.save();
+      }
     }
   }
 
