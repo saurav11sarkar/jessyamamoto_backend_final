@@ -135,6 +135,47 @@ const deleteService = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getMyServicesController = catchAsync(
+  async (req: Request, res: Response) => {
+    if (!req.user?.id) {
+      throw new AppError(401, 'Unauthorized');
+    }
+    const result = await serviceService.getMyServices(req.user.id);
+    res.status(200).json({
+      success: true,
+      message: 'My services fetched successfully',
+      data: result,
+    });
+  },
+);
+
+const updateServiceAvailability = catchAsync(
+  async (req: Request, res: Response) => {
+    const { serviceId } = req.params;
+    if (!req.user?.id) {
+      throw new AppError(401, 'Unauthorized');
+    }
+
+    const result = await serviceService.updateServiceAvailability(
+      serviceId!,
+      req.user.id,
+      {
+        hourRate: req.body.hourRate,
+        days: req.body.days,
+        minAdvanceNoticeHours: req.body.minAdvanceNoticeHours,
+        maxBookingHorizonDays: req.body.maxBookingHorizonDays,
+        blockedDates: req.body.blockedDates,
+      },
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Availability updated successfully',
+      data: result,
+    });
+  },
+);
+
 const getAllServiceLocations = catchAsync(
   async (req: Request, res: Response) => {
     const result = await serviceService.getAllServiceLocations(
@@ -157,5 +198,7 @@ export const serviceController = {
   serviceUserBaseUserController,
   singleUserService,
   deleteService,
+  updateServiceAvailability,
+  getMyServicesController,
   getAllServiceLocations,
 };

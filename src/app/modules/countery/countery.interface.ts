@@ -9,6 +9,8 @@ export interface ICity {
   cityName: string;
   neighborhoods: string[];
   status?: 'active' | 'inactive';
+  bookingFeePercent?: number | undefined;
+  bookingFeeMinimum?: number | undefined;
 }
 
 export interface ICountry {

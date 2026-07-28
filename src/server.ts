@@ -6,6 +6,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import socketHandler from './app/helper/socketHandler';
 import startSubscriptionCron from './app/helper/subscriptionCron';
+import startBookingLifecycleCron from './app/helper/bookingLifecycleCron';
 import 'dotenv/config';
 
 
@@ -53,6 +54,7 @@ const main = async () => {
     console.log(`✅ MongoDB connected: ${mongo.connection.host}`);
 
     startSubscriptionCron();
+    startBookingLifecycleCron();
 
     httpServer.listen(PORT, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);

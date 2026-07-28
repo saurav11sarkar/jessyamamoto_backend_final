@@ -1158,6 +1158,128 @@ const deleteService = async (userId: string) => {
   return result;
 };
 
+// Returns the logged-in partner's own Service documents (with hourRate/days), so the
+// partner-facing "My Services" screen can offer an edit-availability action per service.
+const getMyServices = async (userId: string) => {
+  const result = await Service.find({ userId }).populate('categoryId').lean();
+  return result;
+};
+
+const weekDaysForAvailability = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+];
+
+// Lets a partner edit their own recurring weekly availability and hourly rate after
+// onboarding — the registration wizard previously only wrote this once, with no update path.
+const isValidDateString = (value: string) => {
+  const date = new Date(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime());
+};
+
+const updateServiceAvailability = async (
+  serviceId: string,
+  userId: string,
+  payload: {
+    hourRate?: number;
+    days?: { day: string; startTime: string; endTime: string }[];
+    minAdvanceNoticeHours?: number;
+    maxBookingHorizonDays?: number;
+    blockedDates?: { date: string; reason?: string }[];
+  },
+) => {
+  if (!mongoose.Types.ObjectId.isValid(serviceId)) {
+    throw new AppError(400, 'Invalid service ID');
+  }
+
+  const service = await Service.findById(serviceId);
+  if (!service) throw new AppError(404, 'Service not found');
+
+  const user = await User.findById(userId);
+  if (!user) throw new AppError(404, 'User not found');
+
+  if (user.role !== 'admin' && service.userId.toString() !== userId) {
+    throw new AppError(
+      403,
+      'You can only edit availability for your own services',
+    );
+  }
+
+  const update: {
+    hourRate?: number;
+    days?: typeof payload.days;
+    minAdvanceNoticeHours?: number;
+    maxBookingHorizonDays?: number;
+    blockedDates?: typeof payload.blockedDates;
+  } = {};
+
+  if (payload.hourRate != null) {
+    const hourRate = Number(payload.hourRate);
+    if (Number.isNaN(hourRate) || hourRate <= 0) {
+      throw new AppError(400, 'hourRate must be a positive number');
+    }
+    update.hourRate = hourRate;
+  }
+
+  if (payload.days) {
+    if (!Array.isArray(payload.days) || payload.days.length === 0) {
+      throw new AppError(400, 'days must include at least one time slot');
+    }
+    payload.days.forEach((slot) => {
+      if (!weekDaysForAvailability.includes(slot.day)) {
+        throw new AppError(400, `Invalid day: ${slot.day}`);
+      }
+      if (!slot.startTime || !slot.endTime) {
+        throw new AppError(400, 'Each day requires a start and end time');
+      }
+    });
+    update.days = payload.days;
+  }
+
+  if (payload.minAdvanceNoticeHours != null) {
+    const minAdvanceNoticeHours = Number(payload.minAdvanceNoticeHours);
+    if (Number.isNaN(minAdvanceNoticeHours) || minAdvanceNoticeHours < 0) {
+      throw new AppError(400, 'minAdvanceNoticeHours must be 0 or greater');
+    }
+    update.minAdvanceNoticeHours = minAdvanceNoticeHours;
+  }
+
+  if (payload.maxBookingHorizonDays != null) {
+    const maxBookingHorizonDays = Number(payload.maxBookingHorizonDays);
+    if (Number.isNaN(maxBookingHorizonDays) || maxBookingHorizonDays <= 0) {
+      throw new AppError(400, 'maxBookingHorizonDays must be greater than 0');
+    }
+    update.maxBookingHorizonDays = maxBookingHorizonDays;
+  }
+
+  if (payload.blockedDates) {
+    if (!Array.isArray(payload.blockedDates)) {
+      throw new AppError(400, 'blockedDates must be an array');
+    }
+    payload.blockedDates.forEach((entry) => {
+      if (!isValidDateString(entry.date)) {
+        throw new AppError(
+          400,
+          `Invalid blocked date: ${entry.date}. Use YYYY-MM-DD`,
+        );
+      }
+    });
+    update.blockedDates = payload.blockedDates;
+  }
+
+  const result = await Service.findByIdAndUpdate(serviceId, update, {
+    new: true,
+    runValidators: true,
+  });
+
+  return result;
+};
+
 const getAllServiceLocations = async (query: any, userId?: string) => {
   const { searchTerm, limit, categoryId } = query;
 
@@ -1315,5 +1437,7 @@ export const serviceService = {
   serviceUserBaseUser,
   singleUserService,
   deleteService,
+  updateServiceAvailability,
+  getMyServices,
   getAllServiceLocations,
 };

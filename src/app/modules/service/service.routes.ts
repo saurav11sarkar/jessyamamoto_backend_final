@@ -31,6 +31,18 @@ router.get(
   serviceController.serviceUserBaseUserController,
 );
 
+router.patch(
+  '/:serviceId/availability',
+  auth(userRole['find job']),
+  serviceController.updateServiceAvailability,
+);
+
+router.get(
+  '/mine',
+  auth(userRole['find job']),
+  serviceController.getMyServicesController,
+);
+
 router.get(
   '/:userId',
   serviceAuth(userRole['find care'], userRole['find job']),

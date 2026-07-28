@@ -19,6 +19,7 @@ import { experienceRoutes } from '../modules/experience/experience.routes';
 import { blogRoutes } from '../modules/blog/blog.routes';
 import { ambassadorRoutes } from '../modules/ambassador/ambassador.routes';
 import { badgeRouter } from '../modules/badge/badge.routes';
+import { notificationRouter } from '../modules/notification/notification.routes';
 
 const router = Router();
 
@@ -102,6 +103,10 @@ const moduleRoutes = [
   {
     path: '/badge',
     route: badgeRouter,
+  },
+  {
+    path: '/notification',
+    route: notificationRouter,
   },
 ];
 

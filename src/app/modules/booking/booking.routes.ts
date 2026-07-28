@@ -1,6 +1,6 @@
 import express from 'express';
 import { bookingController } from './booking.controller';
-import { auth } from '../../middlewares/auth';
+import { auth, serviceAuth } from '../../middlewares/auth';
 import { userRole } from '../user/user.constant';
 
 const router = express.Router();
@@ -43,6 +43,14 @@ router.get(
   '/my-service-bookings',
   auth(userRole['find job']),
   bookingController.getMyServiceBookings,
+);
+
+// ===================== Pricing Preview (server-computed, so it always matches checkout) =====================
+// Token optional: logged-out/non-member users get the free-tier rate, members get their own.
+router.get(
+  '/pricing-preview',
+  serviceAuth(userRole['find care'], userRole['find job']),
+  bookingController.pricingPreview,
 );
 
 // ===================== Get Single Booking =====================

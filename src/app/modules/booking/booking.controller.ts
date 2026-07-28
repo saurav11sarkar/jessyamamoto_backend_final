@@ -4,6 +4,33 @@ import sendResponse from '../../utils/sendResponse';
 import catchAsync from '../../utils/catchAsycn';
 import pick from '../../helper/pick';
 
+// ===================== Pricing Preview =====================
+const pricingPreview = catchAsync(async (req: Request, res: Response) => {
+  const { serviceId, durationHours } = req.query;
+
+  if (!serviceId || typeof serviceId !== 'string') {
+    return sendResponse(res, {
+      statusCode: 400,
+      success: false,
+      message: 'serviceId is required',
+      data: null,
+    });
+  }
+
+  const result = await bookingService.previewBookingPricing(
+    req.user?.id,
+    serviceId,
+    Number(durationHours) || 1,
+  );
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: 'Pricing preview fetched successfully',
+    data: result,
+  });
+});
+
 // ===================== Create Booking =====================
 const createBookingController = catchAsync(
   async (req: Request, res: Response) => {
@@ -233,6 +260,7 @@ const getUserBookingManagement = catchAsync(
 );
 
 export const bookingController = {
+  pricingPreview,
   createBookingController,
   getAllbooking,
   getSingleBooking,

@@ -9,4 +9,6 @@ export interface ICategory {
   order?: number;
   findCareUser?: Types.ObjectId[];
   findJobUser?: Types.ObjectId[];
+  bookingFeePercent?: number;
+  bookingFeeMinimum?: number;
 }

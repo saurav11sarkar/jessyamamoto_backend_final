@@ -63,6 +63,20 @@ const ServiceSchema = new Schema<IService>(
         endTime: { type: String, required: true },
       },
     ],
+    minAdvanceNoticeHours: {
+      type: Number,
+      default: 0,
+    },
+    maxBookingHorizonDays: {
+      type: Number,
+      default: 90,
+    },
+    blockedDates: [
+      {
+        date: { type: String, required: true },
+        reason: { type: String },
+      },
+    ],
     status: {
       type: String,
       enum: ['pending', 'accepted', 'completed', 'cancelled'],

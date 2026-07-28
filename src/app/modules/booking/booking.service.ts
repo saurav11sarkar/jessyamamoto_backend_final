@@ -5,10 +5,39 @@ import Service from '../service/service.model';
 import User from '../user/user.model';
 import Payment from '../payment/payment.model';
 import Subscription from '../subscription/subscription.model';
+import Category from '../category/category.model';
+import Country from '../countery/countery.model';
 import pagination, { IOption } from '../../helper/pagenation';
 import mongoose from 'mongoose';
 import Stripe from 'stripe';
 import config from '../../config';
+import sendMailer from '../../helper/sendMailer';
+import notifyUser from '../../helper/notify';
+import {
+  bookingCancelledEmail,
+  bookingCompletedEmail,
+  bookingConfirmedEmail,
+  bookingDeclinedEmail,
+  bookingExpiredEmail,
+  bookingReminderEmail,
+  BookingEmailDetails,
+} from '../../helper/bookingEmailTemplates';
+
+const buildBookingEmailDetails = (booking: any): BookingEmailDetails => {
+  const parent: any = booking.userId;
+  const service: any = booking.serviceId;
+  return {
+    parentName:
+      `${parent?.firstName || ''} ${parent?.lastName || ''}`.trim() || 'there',
+    partnerName:
+      `${service?.firstName || ''} ${service?.lastName || ''}`.trim() ||
+      'your partner',
+    date: booking.date,
+    time: booking.time,
+    endTime: booking.endTime,
+    location: booking.location,
+  };
+};
 
 const stripe = new Stripe(config.stripe.secretKey!);
 
@@ -184,10 +213,40 @@ const getBookingDurationHours = (
   return Number((minutes / 60).toFixed(2));
 };
 
+// The free/non-member tier is a real, admin-editable Subscription row (type: 'free') rather
+// than a hardcoded constant. It is upserted lazily here so pricing always works even if the
+// row hasn't been created yet; after the first call it's a normal row an admin can edit from
+// the dashboard membership page, matching the paid-tier behavior below.
+const getFreeTierSubscription = async () => {
+  try {
+    return await Subscription.findOneAndUpdate(
+      { type: 'free' },
+      {
+        $setOnInsert: {
+          type: 'free',
+          title: 'Free Membership',
+          price: 0,
+          bookingFeePercent: NON_MEMBER_BOOKING_FEE_PERCENT,
+          bookingFeeMinimum: NON_MEMBER_BOOKING_FEE_MINIMUM,
+          description:
+            'Create a JetSet Cares account, explore care options, and book without paid member savings.',
+          content:
+            'Free account access, Browse trusted care profiles, Upgrade anytime for member savings',
+        },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    ).lean();
+  } catch {
+    return null;
+  }
+};
+
 const getBookingPricing = async (
   user: any,
   hourlyRate: number,
   durationHours: number,
+  categoryId?: any,
+  cityName?: string,
 ) => {
   const hasActiveMembership =
     user.isSubscription === true &&
@@ -209,6 +268,42 @@ const getBookingPricing = async (
       Number(subscription?.bookingFeeMinimum) || MEMBER_BOOKING_FEE_MINIMUM;
     membershipType = subscription?.type || 'member';
     membershipPrice = Number(subscription?.price || 0);
+  } else {
+    const freeTier = await getFreeTierSubscription();
+    bookingFeePercent =
+      Number(freeTier?.bookingFeePercent) || NON_MEMBER_BOOKING_FEE_PERCENT;
+    bookingFeeMinimum =
+      Number(freeTier?.bookingFeeMinimum) || NON_MEMBER_BOOKING_FEE_MINIMUM;
+    membershipType = freeTier?.type || 'non-member';
+  }
+
+  // City-level override (from the admin-managed Country/City taxonomy) applies before the
+  // category override, so a deliberate category-wide policy always wins when both are set.
+  if (cityName) {
+    const country = await Country.findOne({ 'cities.cityName': cityName })
+      .select('cities.$')
+      .lean();
+    const city = country?.cities?.[0];
+    if (city?.bookingFeePercent != null) {
+      bookingFeePercent = Number(city.bookingFeePercent);
+    }
+    if (city?.bookingFeeMinimum != null) {
+      bookingFeeMinimum = Number(city.bookingFeeMinimum);
+    }
+  }
+
+  // Category-level override takes precedence over the free/member rate when the admin
+  // has set one for this care category (e.g. tutoring priced differently than childcare).
+  if (categoryId) {
+    const category = await Category.findById(categoryId)
+      .select('bookingFeePercent bookingFeeMinimum')
+      .lean();
+    if (category?.bookingFeePercent != null) {
+      bookingFeePercent = Number(category.bookingFeePercent);
+    }
+    if (category?.bookingFeeMinimum != null) {
+      bookingFeeMinimum = Number(category.bookingFeeMinimum);
+    }
   }
 
   const serviceSubtotal = Number((hourlyRate * durationHours).toFixed(2));
@@ -426,6 +521,38 @@ const createBooking = async (payload: {
     }
   }
 
+  // BOOKING RULES: min notice, max horizon, blocked dates ✅
+  const bookingStartsAt = new Date(`${payload.date}T${payload.time}`);
+  if (!Number.isNaN(bookingStartsAt.getTime())) {
+    const hoursUntilBooking =
+      (bookingStartsAt.getTime() - Date.now()) / (1000 * 60 * 60);
+    const minAdvanceNoticeHours = Number(service.minAdvanceNoticeHours ?? 0);
+    if (minAdvanceNoticeHours > 0 && hoursUntilBooking < minAdvanceNoticeHours) {
+      throw new AppError(
+        400,
+        `This partner requires at least ${minAdvanceNoticeHours} hour(s) advance notice`,
+      );
+    }
+
+    const maxBookingHorizonDays = Number(service.maxBookingHorizonDays ?? 0);
+    if (
+      maxBookingHorizonDays > 0 &&
+      hoursUntilBooking > maxBookingHorizonDays * 24
+    ) {
+      throw new AppError(
+        400,
+        `This partner only accepts bookings up to ${maxBookingHorizonDays} day(s) in advance`,
+      );
+    }
+  }
+
+  const isBlockedDate = (service.blockedDates || []).some(
+    (entry: any) => entry.date === payload.date,
+  );
+  if (isBlockedDate) {
+    throw new AppError(400, 'This partner is not available on the selected date');
+  }
+
   // SLOT CHECK ✅
   const available = await isSlotAvailable(
     payload.serviceId,
@@ -451,7 +578,13 @@ const createBooking = async (payload: {
     payload.endDate,
     payload.endTime,
   );
-  const pricingSnapshot = await getBookingPricing(user, hourRate, durationHours);
+  const pricingSnapshot = await getBookingPricing(
+    user,
+    hourRate,
+    durationHours,
+    service.categoryId,
+    provider?.city || service.location,
+  );
   const trustedBookingFeeCents = Math.round(
     pricingSnapshot.trustedBookingFee * 100,
   );
@@ -603,7 +736,7 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
 
   const booking = await Booking.findById(id).populate({
     path: 'serviceId',
-    select: 'userId days',
+    select: 'userId days blockedDates',
   });
 
   if (!booking) throw new AppError(404, 'Booking not found');
@@ -621,9 +754,9 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
       );
     }
 
-    // Provider can only update status
+    // Provider can only update status (and a dispute reason, when reporting one)
     if (isServiceProvider && !isBookingOwner) {
-      const allowedFields = ['status'];
+      const allowedFields = ['status', 'disputeReason'];
       const hasInvalidField = Object.keys(payload).some(
         (key) => !allowedFields.includes(key),
       );
@@ -662,6 +795,13 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
       throw new AppError(400, `Service is not available on ${newDay}`);
     }
 
+    const isBlockedDate = (serviceDoc?.blockedDates || []).some(
+      (entry: any) => entry.date === newDate,
+    );
+    if (isBlockedDate) {
+      throw new AppError(400, 'This partner is not available on the selected date');
+    }
+
     const ok = isTimeWithinRange(newTime, daySlot.startTime, daySlot.endTime);
     if (!ok) {
       throw new AppError(
@@ -691,8 +831,8 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
     const validTransitions: { [key: string]: string[] } = {
       draft: ['pending', 'cancelled'],
       pending: ['confirmed', 'declined', 'cancelled'],
-      confirmed: ['completed', 'cancelled'],
-      accepted: ['completed', 'cancelled'],
+      confirmed: ['completed', 'cancelled', 'no_show', 'disputed'],
+      accepted: ['completed', 'cancelled', 'no_show', 'disputed'],
     };
 
     const allowedStatuses = validTransitions[booking.status] || [];
@@ -701,6 +841,13 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
         400,
         `Cannot change status from ${booking.status} to ${payload.status}`,
       );
+    }
+
+    if (payload.status === 'disputed') {
+      if (!payload.disputeReason || !String(payload.disputeReason).trim()) {
+        throw new AppError(400, 'disputeReason is required to report a dispute');
+      }
+      payload.disputeReportedBy = userId;
     }
 
     if (payload.status === 'confirmed') {
@@ -746,6 +893,53 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
       path: 'categoryId',
       select: 'name',
     });
+
+  if (updatedBooking && payload.status) {
+    try {
+      const parent: any = updatedBooking.userId;
+      const emailDetails = buildBookingEmailDetails(updatedBooking);
+      const bookingId = updatedBooking._id.toString();
+      const when = `${updatedBooking.date} ${updatedBooking.time}`;
+
+      if (payload.status === 'confirmed' && parent?.email) {
+        const { subject, html } = bookingConfirmedEmail(emailDetails);
+        await sendMailer(parent.email, subject, html);
+      } else if (payload.status === 'declined' && parent?.email) {
+        const { subject, html } = bookingDeclinedEmail(emailDetails);
+        await sendMailer(parent.email, subject, html);
+      } else if (payload.status === 'completed' && parent?.email) {
+        const { subject, html } = bookingCompletedEmail(emailDetails);
+        await sendMailer(parent.email, subject, html);
+      }
+
+      if (parent?._id) {
+        if (payload.status === 'confirmed') {
+          await notifyUser(parent._id.toString(), {
+            type: 'booking_confirmed',
+            title: 'Your booking is confirmed',
+            message: `Confirmed with ${emailDetails.partnerName} on ${when}.`,
+            bookingId,
+          });
+        } else if (payload.status === 'declined') {
+          await notifyUser(parent._id.toString(), {
+            type: 'booking_declined',
+            title: 'Booking not available',
+            message: `${emailDetails.partnerName} is not available for ${when}.`,
+            bookingId,
+          });
+        } else if (payload.status === 'completed') {
+          await notifyUser(parent._id.toString(), {
+            type: 'booking_completed',
+            title: 'Booking completed',
+            message: `Your booking with ${emailDetails.partnerName} is complete. Leave a review!`,
+            bookingId,
+          });
+        }
+      }
+    } catch (mailError) {
+      console.error('Booking notification email failed:', mailError);
+    }
+  }
 
   return updatedBooking;
 };
@@ -1211,6 +1405,36 @@ const getSingleBooking = async (id: string, userId?: string, role?: string) => {
 //   return updatedBooking;
 // };
 
+// ===================== Shared: void/refund a booking's Trusted Booking Fee =====================
+// Used by both the parent/admin-triggered cancel flow and the auto-expire cron so the
+// authorize-vs-capture branching only lives in one place.
+const releaseBookingPayment = async (bookingId: any) => {
+  const payment = await Payment.findOne({ booking: bookingId });
+  if (!payment || !payment.stripePaymentIntentId) return;
+
+  try {
+    if (payment.status === 'authorized') {
+      await stripe.paymentIntents.cancel(payment.stripePaymentIntentId);
+      payment.status = 'failed';
+      await payment.save();
+    } else if (payment.status === 'completed') {
+      await stripe.refunds.create({
+        payment_intent: payment.stripePaymentIntentId,
+      });
+      payment.status = 'refunded';
+      await payment.save();
+    }
+  } catch (error) {
+    console.error('Stripe refund/void failed for booking', bookingId, error);
+    throw new AppError(
+      502,
+      `Releasing the payment failed: ${
+        error instanceof Error ? error.message : 'Unknown error'
+      }. Please contact support to resolve the refund.`,
+    );
+  }
+};
+
 // ===================== Cancel Booking =====================
 const cancelBooking = async (id: string, userId: string) => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -1256,12 +1480,66 @@ const cancelBooking = async (id: string, userId: string) => {
     await user.save();
   }
 
-  // TODO: Process refund if payment was made
-  // Find payment and initiate refund through Stripe
-  const payment = await Payment.findOne({ booking: booking._id });
-  if (payment && payment.status === 'completed') {
-    // Here you can implement Stripe refund logic
-    // TODO: implement Stripe refund logic
+  // Release the payment hold or refund the captured Trusted Booking Fee.
+  try {
+    await releaseBookingPayment(booking._id);
+  } catch (error) {
+    throw new AppError(
+      502,
+      `Booking was cancelled, but ${
+        error instanceof AppError ? error.message : 'releasing the payment failed'
+      }`,
+    );
+  }
+
+  try {
+    const parentUser: any = await User.findById(booking.userId)
+      .select('firstName lastName email')
+      .lean();
+    const serviceDoc: any = await Service.findById(
+      (booking.serviceId as any)?._id || booking.serviceId,
+    )
+      .select('firstName lastName email userId')
+      .lean();
+    const emailDetails = buildBookingEmailDetails({
+      ...booking.toObject(),
+      userId: parentUser,
+      serviceId: serviceDoc,
+    });
+    const bookingId = booking._id.toString();
+
+    if (parentUser?.email) {
+      const { subject, html } = bookingCancelledEmail(
+        emailDetails,
+        emailDetails.parentName,
+      );
+      await sendMailer(parentUser.email, subject, html);
+    }
+    if (parentUser?._id) {
+      await notifyUser(parentUser._id.toString(), {
+        type: 'booking_cancelled',
+        title: 'Booking cancelled',
+        message: `Your booking with ${emailDetails.partnerName} on ${emailDetails.date} was cancelled.`,
+        bookingId,
+      });
+    }
+    if (serviceDoc?.email) {
+      const { subject, html } = bookingCancelledEmail(
+        emailDetails,
+        emailDetails.partnerName,
+      );
+      await sendMailer(serviceDoc.email, subject, html);
+    }
+    if (serviceDoc?.userId) {
+      await notifyUser(serviceDoc.userId.toString(), {
+        type: 'booking_cancelled',
+        title: 'Booking cancelled',
+        message: `The booking with ${emailDetails.parentName} on ${emailDetails.date} was cancelled.`,
+        bookingId,
+      });
+    }
+  } catch (mailError) {
+    console.error('Booking cancellation email failed:', mailError);
   }
 
   return booking;
@@ -1380,7 +1658,207 @@ const getUserBookingManagement = async (options: IOption) => {
   };
 };
 
+// ===================== Pricing Preview (server-computed so it always matches checkout) =====================
+// Runs the exact same getBookingPricing() the real checkout uses, so the pre-checkout UI can
+// never drift from what Stripe actually charges — including city/category overrides, which a
+// client-side re-implementation would otherwise have to duplicate and could get out of sync.
+const previewBookingPricing = async (
+  userId: string | undefined,
+  serviceId: string,
+  durationHours: number,
+) => {
+  if (!mongoose.Types.ObjectId.isValid(serviceId)) {
+    throw new AppError(400, 'Invalid service ID');
+  }
+
+  const service = await Service.findById(serviceId).populate('userId').lean();
+  if (!service) throw new AppError(404, 'Service not found');
+
+  const provider: any = service.userId;
+  const hourRate = Number(service.hourRate || 0);
+  const safeDurationHours = Number(durationHours) > 0 ? Number(durationHours) : 1;
+
+  const user = userId ? await User.findById(userId).lean() : { isSubscription: false };
+  const cityName = provider?.city || service.location;
+
+  const pricing = await getBookingPricing(
+    user || { isSubscription: false },
+    hourRate,
+    safeDurationHours,
+    service.categoryId,
+    cityName,
+  );
+
+  // Always include the non-member baseline too, so the UI can show "members save $X"
+  // without the frontend having to re-derive the city/category override chain itself.
+  const nonMemberPricing = await getBookingPricing(
+    { isSubscription: false },
+    hourRate,
+    safeDurationHours,
+    service.categoryId,
+    cityName,
+  );
+
+  return {
+    ...pricing,
+    nonMemberBookingFeePercent: nonMemberPricing.bookingFeePercent,
+    nonMemberBookingFeeMinimum: nonMemberPricing.bookingFeeMinimum,
+    nonMemberTrustedBookingFee: nonMemberPricing.trustedBookingFee,
+  };
+};
+
+// ===================== Helper: booking end datetime (for cron scans) =====================
+const getBookingEndDateTime = (booking: any): Date | null => {
+  const endTime = booking.endTime || booking.time;
+  const startMinutes = parseTimeToMinutes(booking.time);
+  const endMinutes = parseTimeToMinutes(endTime);
+  const endDate =
+    booking.endDate ||
+    (endMinutes !== null && startMinutes !== null && endMinutes <= startMinutes
+      ? new Date(new Date(booking.date).getTime() + 24 * 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 10)
+      : booking.date);
+  const endsAt = new Date(`${endDate}T${endTime}`);
+  return Number.isNaN(endsAt.getTime()) ? null : endsAt;
+};
+
+// ===================== Cron: auto-expire stale "pending" requests =====================
+// A partner who never responds to a Request to Book must not indefinitely hold a parent's
+// slot and payment authorization — matches the PDF's "Declined / expired" lifecycle row.
+const autoExpireStaleRequests = async () => {
+  const staleBookings = await Booking.find({
+    status: 'pending',
+    responseDeadline: { $lte: new Date() },
+  })
+    .populate({ path: 'userId', select: 'firstName lastName email' })
+    .populate({ path: 'serviceId', select: 'firstName lastName email userId' });
+
+  for (const booking of staleBookings) {
+    try {
+      booking.status = 'declined';
+      await booking.save();
+
+      await releaseBookingPayment(booking._id).catch((error) =>
+        console.error('Auto-expire release payment failed:', error),
+      );
+
+      const parent: any = booking.userId;
+      const emailDetails = buildBookingEmailDetails(booking);
+
+      if (parent?.email) {
+        const { subject, html } = bookingExpiredEmail(emailDetails);
+        await sendMailer(parent.email, subject, html);
+      }
+      if (parent?._id) {
+        await notifyUser(parent._id.toString(), {
+          type: 'booking_expired',
+          title: 'Booking request expired',
+          message: `${emailDetails.partnerName} did not respond in time for ${emailDetails.date}.`,
+          bookingId: booking._id.toString(),
+        });
+      }
+    } catch (error) {
+      console.error('Auto-expire failed for booking', booking._id, error);
+    }
+  }
+
+  return { processed: staleBookings.length };
+};
+
+// ===================== Cron: auto-complete bookings past their care window =====================
+const autoCompletePastBookings = async () => {
+  const candidates = await Booking.find({
+    status: { $in: ['confirmed', 'accepted'] },
+  })
+    .populate({ path: 'userId', select: 'firstName lastName email' })
+    .populate({ path: 'serviceId', select: 'firstName lastName email' });
+
+  const now = new Date();
+  let completedCount = 0;
+
+  for (const booking of candidates) {
+    const endsAt = getBookingEndDateTime(booking);
+    if (!endsAt || endsAt > now) continue;
+
+    try {
+      booking.status = 'completed';
+      await booking.save();
+      completedCount += 1;
+
+      const parent: any = booking.userId;
+      const emailDetails = buildBookingEmailDetails(booking);
+
+      if (parent?.email) {
+        const { subject, html } = bookingCompletedEmail(emailDetails);
+        await sendMailer(parent.email, subject, html);
+      }
+      if (parent?._id) {
+        await notifyUser(parent._id.toString(), {
+          type: 'booking_completed',
+          title: 'Booking completed',
+          message: `Your booking with ${emailDetails.partnerName} is complete. Leave a review!`,
+          bookingId: booking._id.toString(),
+        });
+      }
+    } catch (error) {
+      console.error('Auto-complete failed for booking', booking._id, error);
+    }
+  }
+
+  return { processed: completedCount };
+};
+
+// ===================== Cron: send "upcoming" reminder ~24h before a confirmed booking =====================
+const sendUpcomingReminders = async () => {
+  const candidates = await Booking.find({
+    status: { $in: ['confirmed', 'accepted'] },
+    reminderSent: { $ne: true },
+  })
+    .populate({ path: 'userId', select: 'firstName lastName email' })
+    .populate({ path: 'serviceId', select: 'firstName lastName email' });
+
+  const now = Date.now();
+  const windowMs = 24 * 60 * 60 * 1000;
+  let sentCount = 0;
+
+  for (const booking of candidates) {
+    const startsAt = new Date(`${booking.date}T${booking.time}`);
+    if (Number.isNaN(startsAt.getTime())) continue;
+
+    const msUntilStart = startsAt.getTime() - now;
+    if (msUntilStart <= 0 || msUntilStart > windowMs) continue;
+
+    try {
+      booking.reminderSent = true;
+      await booking.save();
+      sentCount += 1;
+
+      const parent: any = booking.userId;
+      const emailDetails = buildBookingEmailDetails(booking);
+
+      if (parent?.email) {
+        const { subject, html } = bookingReminderEmail(emailDetails);
+        await sendMailer(parent.email, subject, html);
+      }
+      if (parent?._id) {
+        await notifyUser(parent._id.toString(), {
+          type: 'booking_reminder',
+          title: 'Upcoming booking reminder',
+          message: `Your booking with ${emailDetails.partnerName} is coming up on ${emailDetails.date}.`,
+          bookingId: booking._id.toString(),
+        });
+      }
+    } catch (error) {
+      console.error('Reminder send failed for booking', booking._id, error);
+    }
+  }
+
+  return { processed: sentCount };
+};
+
 export const bookingService = {
+  previewBookingPricing,
   createBooking,
   getAllBooking,
   getSingleBooking,
@@ -1391,4 +1869,7 @@ export const bookingService = {
   cancelBooking,
   getBookingStats,
   getUserBookingManagement,
+  autoExpireStaleRequests,
+  autoCompletePastBookings,
+  sendUpcomingReminders,
 };

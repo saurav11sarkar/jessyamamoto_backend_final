@@ -53,6 +53,11 @@ router.patch(
   auth(userRole.admin),
   countryController.updateCityStatus,
 );
+router.patch(
+  '/:id/city/:cityName/pricing',
+  auth(userRole.admin),
+  countryController.updateCityPricing,
+);
 router.get('/:id', countryController.getCountryById);
 router.put(
   '/:id',

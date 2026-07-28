@@ -221,6 +221,27 @@ const updateCityStatus = catchAsync(async (req, res) => {
   });
 });
 
+const updateCityPricing = catchAsync(async (req, res) => {
+  const cityName = req.params.cityName || req.body.cityName;
+  if (!cityName) {
+    throw new AppError(400, 'cityName is required');
+  }
+
+  const result = await countryService.updateCityPricing(req.params.id!, cityName, {
+    bookingFeePercent:
+      req.body.bookingFeePercent === '' ? null : req.body.bookingFeePercent,
+    bookingFeeMinimum:
+      req.body.bookingFeeMinimum === '' ? null : req.body.bookingFeeMinimum,
+  });
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: 'City pricing updated successfully',
+    data: result,
+  });
+});
+
 export const countryController = {
   createCountry,
   getAllCountry,
@@ -234,4 +255,5 @@ export const countryController = {
   addNeighborhood,
   removeNeighborhood,
   updateCityStatus,
+  updateCityPricing,
 };

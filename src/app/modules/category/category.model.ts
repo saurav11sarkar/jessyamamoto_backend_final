@@ -11,6 +11,8 @@ const CategorySchema = new mongoose.Schema<ICategory>(
     order: { type: Number, default: 0 },
     findCareUser: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     findJobUser: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    bookingFeePercent: { type: Number },
+    bookingFeeMinimum: { type: Number },
   },
   { timestamps: true },
 );

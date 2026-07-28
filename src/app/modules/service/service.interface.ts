@@ -20,5 +20,11 @@ export interface IService {
     startTime: string;
     endTime: string;
   }[];
+  minAdvanceNoticeHours?: number;
+  maxBookingHorizonDays?: number;
+  blockedDates?: {
+    date: string;
+    reason?: string;
+  }[];
   status: 'pending' | 'accepted' | 'completed' | 'cancelled';
 }

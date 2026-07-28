@@ -108,6 +108,15 @@ import User from '../modules/user/user.model';
 import Subscription from '../modules/subscription/subscription.model';
 import Booking from '../modules/booking/booking.model';
 import { serviceService } from '../modules/service/service.service';
+import sendMailer from './sendMailer';
+import notifyUser from './notify';
+import {
+  bookingConfirmedEmail,
+  requestPendingEmail,
+  requestSubmittedEmail,
+} from './bookingEmailTemplates';
+
+const PENDING_RESPONSE_WINDOW_HOURS = 24;
 
 const stripe = new Stripe(config.stripe.secretKey!);
 
@@ -185,7 +194,12 @@ const webHookHandler = async (req: Request, res: Response) => {
 
         /* --------- BOOKING PAYMENT --------- */
         if (paymentType === 'booking') {
-          const booking = await Booking.findById(payment.booking);
+          const booking = await Booking.findById(payment.booking)
+            .populate({ path: 'userId', select: 'firstName lastName email' })
+            .populate({
+              path: 'serviceId',
+              select: 'firstName lastName email userId',
+            });
 
           if (!booking) {
             return res.status(200).json({ received: true });
@@ -194,8 +208,72 @@ const webHookHandler = async (req: Request, res: Response) => {
           booking.holdExpiresAt = null;
           booking.status =
             booking.bookingMode === 'instant' ? 'confirmed' : 'pending';
+          if (booking.status === 'pending') {
+            booking.responseDeadline = new Date(
+              Date.now() + PENDING_RESPONSE_WINDOW_HOURS * 60 * 60 * 1000,
+            );
+          }
           await booking.save();
 
+          try {
+            const parent: any = booking.userId;
+            const service: any = booking.serviceId;
+            const emailDetails = {
+              parentName:
+                `${parent?.firstName || ''} ${parent?.lastName || ''}`.trim() ||
+                'there',
+              partnerName:
+                `${service?.firstName || ''} ${service?.lastName || ''}`.trim() ||
+                'your partner',
+              date: booking.date,
+              time: booking.time,
+              endTime: booking.endTime,
+              location: booking.location,
+            };
+            const when = `${booking.date} ${booking.time}`;
+
+            if (booking.status === 'confirmed') {
+              if (parent?.email) {
+                const { subject, html } = bookingConfirmedEmail(emailDetails);
+                await sendMailer(parent.email, subject, html);
+              }
+              if (parent?._id) {
+                await notifyUser(parent._id.toString(), {
+                  type: 'booking_confirmed',
+                  title: 'Your booking is confirmed',
+                  message: `Confirmed with ${emailDetails.partnerName} on ${when}.`,
+                  bookingId: booking._id.toString(),
+                });
+              }
+            } else {
+              if (service?.email) {
+                const { subject, html } = requestSubmittedEmail(emailDetails);
+                await sendMailer(service.email, subject, html);
+              }
+              if (parent?.email) {
+                const { subject, html } = requestPendingEmail(emailDetails);
+                await sendMailer(parent.email, subject, html);
+              }
+              if (service?.userId) {
+                await notifyUser(service.userId.toString(), {
+                  type: 'booking_request',
+                  title: 'New booking request',
+                  message: `${emailDetails.parentName} requested a booking on ${when}.`,
+                  bookingId: booking._id.toString(),
+                });
+              }
+              if (parent?._id) {
+                await notifyUser(parent._id.toString(), {
+                  type: 'booking_pending',
+                  title: 'Request sent',
+                  message: `Your request to ${emailDetails.partnerName} is pending a response.`,
+                  bookingId: booking._id.toString(),
+                });
+              }
+            }
+          } catch (mailError) {
+            console.error('Booking notification email failed:', mailError);
+          }
         }
 
         return res.status(200).json({ received: true });

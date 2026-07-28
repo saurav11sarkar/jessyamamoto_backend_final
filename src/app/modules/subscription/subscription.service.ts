@@ -78,6 +78,17 @@ const updateSubscription = async (
   subscriptionId: string,
   payload: Partial<ISubscription>,
 ) => {
+  const existing = await Subscription.findById(subscriptionId);
+  if (!existing) {
+    throw new AppError(400, 'Subscription not found');
+  }
+  if (existing.type === 'free' && payload.type && payload.type !== 'free') {
+    throw new AppError(
+      400,
+      'The Free / Non-Member plan type cannot be changed.',
+    );
+  }
+
   const result = await Subscription.findByIdAndUpdate(subscriptionId, payload, {
     new: true,
   });
@@ -88,10 +99,18 @@ const updateSubscription = async (
 };
 
 const deleteSubscription = async (subscriptionId: string) => {
-  const result = await Subscription.findByIdAndDelete(subscriptionId);
-  if (!result) {
+  const existing = await Subscription.findById(subscriptionId);
+  if (!existing) {
     throw new AppError(400, 'Subscription not found');
   }
+  if (existing.type === 'free') {
+    throw new AppError(
+      400,
+      'The Free / Non-Member plan cannot be deleted. Edit its fee and minimum instead.',
+    );
+  }
+
+  const result = await Subscription.findByIdAndDelete(subscriptionId);
   return result;
 };
 

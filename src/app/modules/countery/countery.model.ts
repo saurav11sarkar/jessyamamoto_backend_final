@@ -20,6 +20,8 @@ const CitySchema = new Schema<ICity>(
       enum: ['active', 'inactive'],
       default: 'active',
     },
+    bookingFeePercent: { type: Number },
+    bookingFeeMinimum: { type: Number },
   },
   { _id: false },
 );

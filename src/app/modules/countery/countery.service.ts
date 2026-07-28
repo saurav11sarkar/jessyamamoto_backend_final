@@ -235,6 +235,36 @@ const updateCityStatus = async (
   return await country.save();
 };
 
+// Sets (or clears, when omitted) a per-city Trusted Booking Fee override — unset means
+// "use the category override if any, otherwise the global free/member rate."
+const updateCityPricing = async (
+  id: string,
+  cityName: string,
+  payload: { bookingFeePercent?: number | null; bookingFeeMinimum?: number | null },
+) => {
+  const country = await Country.findById(id);
+  if (!country) throw new AppError(404, 'Country not found');
+
+  const city = country.cities.find((item) => item.cityName === cityName);
+  if (!city) {
+    throw new AppError(404, 'City not found in this country');
+  }
+
+  if (payload.bookingFeePercent === null) {
+    city.bookingFeePercent = undefined;
+  } else if (payload.bookingFeePercent != null) {
+    city.bookingFeePercent = Number(payload.bookingFeePercent);
+  }
+
+  if (payload.bookingFeeMinimum === null) {
+    city.bookingFeeMinimum = undefined;
+  } else if (payload.bookingFeeMinimum != null) {
+    city.bookingFeeMinimum = Number(payload.bookingFeeMinimum);
+  }
+
+  return await country.save();
+};
+
 export const countryService = {
   createCountry,
   getAllCountries,
@@ -247,4 +277,5 @@ export const countryService = {
   addNeighborhoodToCountry,
   removeNeighborhoodFromCountry,
   updateCityStatus,
+  updateCityPricing,
 };
