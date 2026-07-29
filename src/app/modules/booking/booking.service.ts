@@ -67,6 +67,8 @@ const withBookingProgress = <T extends { status?: string }>(booking: T) => {
     declined: { step: 0, label: 'Booking declined', isTerminal: true },
     cancelled: { step: 0, label: 'Booking cancelled', isTerminal: true },
     refunded: { step: 0, label: 'Booking refunded', isTerminal: true },
+    no_show: { step: 3, label: 'Marked as no-show', isTerminal: true },
+    disputed: { step: 3, label: 'Under dispute review', isTerminal: false },
   };
 
   const progress =
