@@ -20,6 +20,9 @@ import {
   bookingDeclinedEmail,
   bookingExpiredEmail,
   bookingReminderEmail,
+  disputeReportedAdminEmail,
+  disputeFiledEmail,
+  disputeResolvedEmail,
   BookingEmailDetails,
 } from '../../helper/bookingEmailTemplates';
 
@@ -775,6 +778,15 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
     throw new AppError(400, `Cannot update ${booking.status} booking`);
   }
 
+  // A disputed booking is frozen for both parties — only JetSet support (admin) can resolve it.
+  const wasDisputed = booking.status === 'disputed';
+  if (wasDisputed && user.role !== 'admin') {
+    throw new AppError(
+      403,
+      'This booking is under dispute review. Please wait for JetSet support to resolve it.',
+    );
+  }
+
   // ✅ If updating slot: re-validate day/date/time properly
   if (payload.day || payload.date || payload.time) {
     const newDay = payload.day || booking.day;
@@ -835,6 +847,7 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
       pending: ['confirmed', 'declined', 'cancelled'],
       confirmed: ['completed', 'cancelled', 'no_show', 'disputed'],
       accepted: ['completed', 'cancelled', 'no_show', 'disputed'],
+      disputed: ['confirmed', 'completed', 'cancelled', 'refunded'],
     };
 
     const allowedStatuses = validTransitions[booking.status] || [];
@@ -850,6 +863,22 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
         throw new AppError(400, 'disputeReason is required to report a dispute');
       }
       payload.disputeReportedBy = userId;
+    }
+
+    // Resolving a dispute (admin-only, enforced by the freeze guard above) requires notes
+    // explaining the outcome, and is stamped so there's an audit trail of who closed it.
+    if (wasDisputed && payload.status !== 'disputed') {
+      if (
+        !payload.disputeResolutionNotes ||
+        !String(payload.disputeResolutionNotes).trim()
+      ) {
+        throw new AppError(
+          400,
+          'disputeResolutionNotes is required to resolve a dispute',
+        );
+      }
+      payload.disputeResolvedBy = userId;
+      payload.disputeResolvedAt = new Date();
     }
 
     if (payload.status === 'confirmed') {
@@ -889,16 +918,37 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
     })
     .populate({
       path: 'serviceId',
-      select: 'firstName lastName email location hourRate',
+      select: 'firstName lastName email location hourRate userId',
     })
     .populate({
       path: 'categoryId',
       select: 'name',
     });
 
+  // Resolving a dispute into cancelled/refunded actually releases the held Trusted Booking
+  // Fee — same helper the dedicated /cancel endpoint uses, so this stays the one place that
+  // does the authorize-vs-capture branching.
+  if (
+    wasDisputed &&
+    updatedBooking &&
+    ['cancelled', 'refunded'].includes(payload.status)
+  ) {
+    try {
+      await releaseBookingPayment(updatedBooking._id);
+    } catch (error) {
+      throw new AppError(
+        502,
+        `Dispute resolved and booking marked ${payload.status}, but ${
+          error instanceof AppError ? error.message : 'releasing the payment failed'
+        }`,
+      );
+    }
+  }
+
   if (updatedBooking && payload.status) {
     try {
       const parent: any = updatedBooking.userId;
+      const service: any = updatedBooking.serviceId;
       const emailDetails = buildBookingEmailDetails(updatedBooking);
       const bookingId = updatedBooking._id.toString();
       const when = `${updatedBooking.date} ${updatedBooking.time}`;
@@ -912,6 +962,66 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
       } else if (payload.status === 'completed' && parent?.email) {
         const { subject, html } = bookingCompletedEmail(emailDetails);
         await sendMailer(parent.email, subject, html);
+      } else if (payload.status === 'disputed') {
+        // Alert JetSet support so the freeze doesn't just sit there unnoticed.
+        const adminAccounts = await User.find({ role: 'admin' })
+          .select('email')
+          .lean();
+        const adminEmails = Array.from(
+          new Set(
+            [
+              config.email.admin,
+              ...adminAccounts.map((a: any) => a.email),
+            ].filter(Boolean),
+          ),
+        );
+        const reportedByRole =
+          payload.disputeReportedBy?.toString() === parent?._id?.toString()
+            ? 'parent'
+            : 'partner';
+        const { subject: adminSubject, html: adminHtml } =
+          disputeReportedAdminEmail(
+            emailDetails,
+            payload.disputeReason || '',
+            reportedByRole,
+          );
+        await Promise.all(
+          adminEmails.map((to) => sendMailer(to as string, adminSubject, adminHtml)),
+        );
+
+        // Let both parties know the booking is on hold pending review.
+        if (parent?.email) {
+          const { subject, html } = disputeFiledEmail(
+            emailDetails,
+            emailDetails.parentName,
+          );
+          await sendMailer(parent.email, subject, html);
+        }
+        if (service?.email) {
+          const { subject, html } = disputeFiledEmail(
+            emailDetails,
+            emailDetails.partnerName,
+          );
+          await sendMailer(service.email, subject, html);
+        }
+      } else if (wasDisputed && payload.status !== 'disputed') {
+        // Dispute resolved — tell both sides the outcome and why.
+        const { subject, html } = disputeResolvedEmail(
+          emailDetails,
+          emailDetails.parentName,
+          payload.status,
+          payload.disputeResolutionNotes || '',
+        );
+        if (parent?.email) await sendMailer(parent.email, subject, html);
+        if (service?.email) {
+          const { subject: s2, html: h2 } = disputeResolvedEmail(
+            emailDetails,
+            emailDetails.partnerName,
+            payload.status,
+            payload.disputeResolutionNotes || '',
+          );
+          await sendMailer(service.email, s2, h2);
+        }
       }
 
       if (parent?._id) {
@@ -934,6 +1044,39 @@ const updateBooking = async (id: string, payload: any, userId?: string) => {
             type: 'booking_completed',
             title: 'Booking completed',
             message: `Your booking with ${emailDetails.partnerName} is complete. Leave a review!`,
+            bookingId,
+          });
+        } else if (payload.status === 'disputed') {
+          await notifyUser(parent._id.toString(), {
+            type: 'booking_disputed',
+            title: 'Issue reported on your booking',
+            message: `An issue was reported for your booking on ${when}. JetSet support is reviewing it.`,
+            bookingId,
+          });
+        } else if (wasDisputed && payload.status !== 'disputed') {
+          await notifyUser(parent._id.toString(), {
+            type: 'dispute_resolved',
+            title: 'Your reported issue has been resolved',
+            message: `JetSet support resolved the dispute for your booking on ${when}.`,
+            bookingId,
+          });
+        }
+      }
+
+      if (service?.userId) {
+        const providerId = service.userId.toString();
+        if (payload.status === 'disputed') {
+          await notifyUser(providerId, {
+            type: 'booking_disputed',
+            title: 'Issue reported on a booking',
+            message: `An issue was reported for the booking on ${when}. JetSet support is reviewing it.`,
+            bookingId,
+          });
+        } else if (wasDisputed && payload.status !== 'disputed') {
+          await notifyUser(providerId, {
+            type: 'dispute_resolved',
+            title: 'Dispute resolved',
+            message: `JetSet support resolved the dispute for the booking on ${when}.`,
             bookingId,
           });
         }
@@ -1469,6 +1612,15 @@ const cancelBooking = async (id: string, userId: string) => {
   }
   if (booking.status === 'completed') {
     throw new AppError(400, 'Cannot cancel completed booking');
+  }
+
+  // A disputed booking can only be closed out by admin (via dispute resolution), so a parent
+  // can't self-cancel their way out of a dispute before support has reviewed it.
+  if (booking.status === 'disputed' && user.role !== 'admin') {
+    throw new AppError(
+      403,
+      'This booking is under dispute review. Please wait for JetSet support to resolve it.',
+    );
   }
 
   // Update booking status

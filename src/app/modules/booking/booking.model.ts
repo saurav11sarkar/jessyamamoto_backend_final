@@ -50,6 +50,9 @@ const BookingSchema = new Schema(
     reminderSent: { type: Boolean, default: false },
     disputeReason: { type: String },
     disputeReportedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    disputeResolutionNotes: { type: String },
+    disputeResolvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    disputeResolvedAt: { type: Date },
     pricingSnapshot: {
       hourlyRate: Number,
       durationHours: Number,

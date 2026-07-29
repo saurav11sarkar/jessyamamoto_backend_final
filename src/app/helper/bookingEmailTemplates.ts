@@ -141,6 +141,61 @@ export const bookingCancelledEmail = (
   ),
 });
 
+// Sent to JetSet support/admin when a parent or partner reports an issue.
+export const disputeReportedAdminEmail = (
+  details: BookingEmailDetails,
+  reason: string,
+  reportedByRole: string,
+) => ({
+  subject: `Booking dispute reported — ${details.parentName} / ${details.partnerName}`,
+  html: wrapEmailBody(
+    'New Dispute Reported',
+    `<p>A ${reportedByRole} reported an issue on a booking.</p>
+     ${detailsList(details)}
+     <p><strong>Parent:</strong> ${details.parentName}</p>
+     <p><strong>Partner:</strong> ${details.partnerName}</p>
+     <p><strong>Reported reason:</strong></p>
+     <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #faf5ff; border-radius: 10px; margin: 12px 0;">
+       <tr><td style="padding: 16px 20px; font-size: 14px; color: #581c87;">${reason}</td></tr>
+     </table>
+     <p>This booking is now frozen for both parties until support resolves it from the admin dashboard.</p>`,
+  ),
+});
+
+// Sent to both parties (parent and partner) once a dispute has been filed, so neither is left guessing.
+export const disputeFiledEmail = (
+  details: BookingEmailDetails,
+  recipientName: string,
+) => ({
+  subject: 'An issue was reported on your booking',
+  html: wrapEmailBody(
+    'Dispute Under Review',
+    `<p>Hello ${recipientName},</p>
+     <p>An issue has been reported for the following booking, and JetSet support is reviewing it.</p>
+     ${detailsList(details)}
+     <p>This booking is on hold until support resolves the issue. We'll email you as soon as it's settled.</p>`,
+  ),
+});
+
+// Sent to both parties once JetSet support resolves a dispute.
+export const disputeResolvedEmail = (
+  details: BookingEmailDetails,
+  recipientName: string,
+  outcomeStatus: string,
+  resolutionNotes: string,
+) => ({
+  subject: 'Update: your reported issue has been resolved',
+  html: wrapEmailBody(
+    'Dispute Resolved',
+    `<p>Hello ${recipientName},</p>
+     <p>JetSet support has reviewed and resolved the reported issue on this booking.</p>
+     ${detailsList(details)}
+     <p><strong>Outcome:</strong> Booking marked as <strong>${outcomeStatus}</strong></p>
+     ${resolutionNotes ? `<table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border-radius: 10px; margin: 12px 0;"><tr><td style="padding: 16px 20px; font-size: 14px; color: #475569;">${resolutionNotes}</td></tr></table>` : ''}
+     <p>If you have further questions, reply to this email and JetSet support will follow up.</p>`,
+  ),
+});
+
 // Sent to the parent once care is marked completed, prompting a review.
 export const bookingCompletedEmail = (details: BookingEmailDetails) => ({
   subject: 'How was your JetSet Cares booking?',
