@@ -44,10 +44,10 @@ const buildBookingEmailDetails = (booking: any): BookingEmailDetails => {
 
 const stripe = new Stripe(config.stripe.secretKey!);
 
-const NON_MEMBER_BOOKING_FEE_PERCENT = 20;
-const NON_MEMBER_BOOKING_FEE_MINIMUM = 3.5;
-const MEMBER_BOOKING_FEE_PERCENT = 8.88;
-const MEMBER_BOOKING_FEE_MINIMUM = 1.25;
+const NON_MEMBER_BOOKING_FEE_PERCENT = 25;
+const NON_MEMBER_BOOKING_FEE_MINIMUM = 5;
+const MEMBER_BOOKING_FEE_PERCENT = 12.5;
+const MEMBER_BOOKING_FEE_MINIMUM = 3;
 const SLOT_HOLD_MINUTES = 15;
 
 const withBookingProgress = <T extends { status?: string }>(booking: T) => {
@@ -227,12 +227,14 @@ const getFreeTierSubscription = async () => {
     return await Subscription.findOneAndUpdate(
       { type: 'free' },
       {
+        $set: {
+          bookingFeePercent: NON_MEMBER_BOOKING_FEE_PERCENT,
+          bookingFeeMinimum: NON_MEMBER_BOOKING_FEE_MINIMUM,
+        },
         $setOnInsert: {
           type: 'free',
           title: 'Free Membership',
           price: 0,
-          bookingFeePercent: NON_MEMBER_BOOKING_FEE_PERCENT,
-          bookingFeeMinimum: NON_MEMBER_BOOKING_FEE_MINIMUM,
           description:
             'Create a JetSet Cares account, explore care options, and book without paid member savings.',
           content:

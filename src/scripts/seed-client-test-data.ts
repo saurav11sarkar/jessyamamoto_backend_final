@@ -155,20 +155,20 @@ const seed = async () => {
     price: 19.99,
     description: 'Monthly member savings for JetSet Cares bookings.',
     content:
-      '8.88% Trusted Booking Fee, $1.25 minimum booking fee, Member booking savings, Cancel according to plan terms',
-    bookingFeePercent: 8.88,
-    bookingFeeMinimum: 1.25,
+      '12.5% Trusted Booking Fee, $3 minimum booking fee, Member booking savings, Cancel according to plan terms',
+    bookingFeePercent: 12.5,
+    bookingFeeMinimum: 3,
   });
 
   await upsertSubscription({
-    type: 'quarterly',
-    title: 'Quarterly Membership',
+    type: '6month',
+    title: '6-Month Membership',
     price: 54.99,
-    description: 'Quarterly member savings for families who book while traveling.',
+    description: '6-month member savings for families who book while traveling.',
     content:
-      '8.88% Trusted Booking Fee, $1.25 minimum booking fee, Best short-term travel value, Member booking savings',
-    bookingFeePercent: 8.88,
-    bookingFeeMinimum: 1.25,
+      '12.5% Trusted Booking Fee, $3 minimum booking fee, Best short-term travel value, Member booking savings',
+    bookingFeePercent: 12.5,
+    bookingFeeMinimum: 3,
   });
 
   await upsertSubscription({
@@ -177,9 +177,9 @@ const seed = async () => {
     price: 179,
     description: 'Annual member savings for frequent family travel.',
     content:
-      '8.88% Trusted Booking Fee, $1.25 minimum booking fee, Annual member value, Member booking savings',
-    bookingFeePercent: 8.88,
-    bookingFeeMinimum: 1.25,
+      '12.5% Trusted Booking Fee, $3 minimum booking fee, Annual member value, Member booking savings',
+    bookingFeePercent: 12.5,
+    bookingFeeMinimum: 3,
   });
 
   const category = await Category.findOneAndUpdate(
@@ -343,12 +343,12 @@ const seed = async () => {
     {
       role: 'Parent non-member',
       email: nonMemberParent.email,
-      expectedFee: '20%, minimum $3.50',
+      expectedFee: '25%, minimum $5.00',
     },
     {
       role: 'Parent member',
       email: memberParent.email,
-      expectedFee: '8.88%, minimum $1.25',
+      expectedFee: '12.5%, minimum $3.00',
     },
     {
       role: 'Partner',

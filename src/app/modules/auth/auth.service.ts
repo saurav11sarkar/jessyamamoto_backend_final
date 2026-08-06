@@ -114,11 +114,11 @@ const loginUser = async (payload: Partial<IUser>) => {
     }
   }
 
-  if (user.role !== userRole.admin && user.role !== userRole.ambassador) {
+  if (user.role === userRole['find job']) {
     if (user.userStatus !== 'approved') {
       throw new AppError(
         403,
-        `Your account is not approved by admin. Stile ${user.userStatus}`,
+        `Your provider account is not approved by admin yet. Status: ${user.userStatus}`,
       );
     }
   }

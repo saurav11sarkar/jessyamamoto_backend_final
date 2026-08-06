@@ -4,6 +4,88 @@ import AppError from '../../error/appError';
 import { IOption } from '../../helper/pagenation';
 import pagination from '../../helper/pagenation';
 
+const standardPlans: ISubscription[] = [
+  {
+    type: 'free',
+    title: 'Free Membership',
+    price: 0,
+    bookingFeePercent: 25,
+    bookingFeeMinimum: 5,
+    description:
+      'Create a JetSet Cares account, explore care options, and book without paid member savings.',
+    content:
+      'Free account access, Browse trusted care profiles, Upgrade anytime for member savings',
+  },
+  {
+    type: 'monthly',
+    title: 'Monthly Membership',
+    price: 24.99,
+    bookingFeePercent: 12.5,
+    bookingFeeMinimum: 3,
+    description: 'Monthly member savings for JetSet Cares bookings.',
+    content:
+      '12.5% Trusted Booking Fee, $3 minimum booking fee, Member pricing on every eligible booking, Cancel according to plan terms',
+  },
+  {
+    type: '6month',
+    title: '6-Month Membership',
+    price: 129.99,
+    bookingFeePercent: 12.5,
+    bookingFeeMinimum: 3,
+    description: '6-month member savings for families who book while traveling.',
+    content:
+      '12.5% Trusted Booking Fee, $3 minimum booking fee, Save compared with six monthly payments, Six-month billing',
+  },
+  {
+    type: 'annual',
+    title: 'Annual Membership',
+    price: 249.99,
+    bookingFeePercent: 12.5,
+    bookingFeeMinimum: 3,
+    description: 'Annual member savings for frequent family travel.',
+    content:
+      '12.5% Trusted Booking Fee, $3 minimum booking fee, Annual member value, Annual billing',
+  },
+];
+
+const normalizeDefaultSubscriptions = async () => {
+  const quarterly = await Subscription.findOne({ type: 'quarterly' });
+  const sixMonth = await Subscription.findOne({ type: '6month' });
+
+  if (quarterly && !sixMonth) {
+    await Subscription.findByIdAndUpdate(quarterly._id, {
+      type: '6month',
+      title: '6-Month Membership',
+      price: 129.99,
+      bookingFeePercent: 12.5,
+      bookingFeeMinimum: 3,
+      description:
+        '6-month member savings for families who book while traveling.',
+      content:
+        '12.5% Trusted Booking Fee, $3 minimum booking fee, Save compared with six monthly payments, Six-month billing',
+    });
+  }
+
+  await Promise.all(
+    standardPlans.map((plan) =>
+      Subscription.findOneAndUpdate(
+        { type: plan.type },
+        {
+          $setOnInsert: plan,
+          $set: {
+            title: plan.title,
+            price: plan.price,
+            bookingFeePercent: plan.bookingFeePercent,
+            bookingFeeMinimum: plan.bookingFeeMinimum,
+            description: plan.description,
+            content: plan.content,
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      ),
+    ),
+  );
+};
 
 const createSubscription = async (payload: ISubscription) => {
   const result = await Subscription.create(payload);
@@ -16,6 +98,8 @@ const createSubscription = async (payload: ISubscription) => {
 };
 
 const getAllSubscriptions = async (params: any, options: IOption) => {
+  await normalizeDefaultSubscriptions();
+
   const { page, limit, skip, sortBy, sortOrder } = pagination(options);
   const { searchTerm, ...filterData } = params;
 
@@ -40,7 +124,7 @@ const getAllSubscriptions = async (params: any, options: IOption) => {
 
   andCondition.push({
     title: { $not: /child/i },
-    type: { $not: /child/i },
+    type: { $not: /child|quarterly/i },
   });
 
   const whereCondition = { $and: andCondition };
