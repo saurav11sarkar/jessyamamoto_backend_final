@@ -8,6 +8,8 @@ const notificationSchema = new Schema<INotification>(
     title: { type: String, required: true },
     message: { type: String, required: true },
     bookingId: { type: Schema.Types.ObjectId, ref: 'Booking' },
+    conversationId: { type: Schema.Types.ObjectId, ref: 'Conversation' },
+    messageId: { type: Schema.Types.ObjectId, ref: 'Message' },
     read: { type: Boolean, default: false },
   },
   { timestamps: true },

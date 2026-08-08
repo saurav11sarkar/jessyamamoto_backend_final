@@ -6,6 +6,8 @@ export interface NotifyPayload {
   title: string;
   message: string;
   bookingId?: string;
+  conversationId?: string;
+  messageId?: string;
 }
 
 // Persists a notification and pushes it live over the existing chat socket infrastructure

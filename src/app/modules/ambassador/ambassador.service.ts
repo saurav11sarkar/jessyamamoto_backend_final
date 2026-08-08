@@ -242,7 +242,7 @@ const getAmbassadorDashboard = async (ambassadorId: string) => {
   const providerIds = providers.map(p => p._id);
 
   const totalReferred = providers.length;
-  const pendingProviders = providers.filter(p => p.userStatus === 'panding').length;
+  const pendingProviders = providers.filter(p => ['pending', 'panding'].includes(p.userStatus || '')).length;
   const approvedProviders = providers.filter(p => p.userStatus === 'approved').length;
   const rejectedProviders = providers.filter(p => p.userStatus === 'reject').length;
   const activeProviders = providers.filter(p => p.status === 'active' && p.userStatus === 'approved').length;

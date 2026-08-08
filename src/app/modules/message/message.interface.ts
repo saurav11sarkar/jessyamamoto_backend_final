@@ -6,7 +6,7 @@ export interface IMessage {
   senderId: Types.ObjectId;
   receiverId: Types.ObjectId;
   message: string;
-  messageType: 'text' | 'image' | 'file' | 'audio';
+  messageType: 'text' | 'image' | 'file' | 'audio' | 'gif';
   read: boolean;
   deletedBy: Types.ObjectId[]; // Array of user IDs who deleted the message
   edited: boolean;

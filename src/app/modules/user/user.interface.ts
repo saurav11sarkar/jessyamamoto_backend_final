@@ -38,7 +38,7 @@ export interface IUser {
   status?: 'active' | 'inactive';
   gender?: 'male' | 'female' | 'other';
   experienceLevel?: 'beginner' | 'intermediate' | 'expert';
-  userStatus?: 'approved' | 'reject' | 'panding';
+  userStatus?: 'approved' | 'reject' | 'pending' | 'panding';
   category?: Types.ObjectId[];
   service?: Types.ObjectId[];
   totalBooking?: Types.ObjectId[];

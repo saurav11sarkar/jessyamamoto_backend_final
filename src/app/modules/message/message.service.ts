@@ -2,6 +2,58 @@
 import Message from './message.model';
 import Conversation from '../conversation/conversation.model';
 import { Types } from 'mongoose';
+import notifyUser from '../../helper/notify';
+import sendMailer from '../../helper/sendMailer';
+import config from '../../config';
+
+const getDisplayName = (user: any) =>
+  `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Someone';
+
+const getMessagePreview = (message: string, messageType: string) => {
+  if (messageType === 'gif') return 'sent you a GIF';
+  if (messageType === 'image') return 'sent you an image';
+  if (messageType === 'file') return 'sent you a file';
+  if (messageType === 'audio') return 'sent you an audio message';
+  return message.length > 120 ? `${message.slice(0, 117)}...` : message;
+};
+
+const sendMessageAlerts = async (messageDoc: any) => {
+  const sender = messageDoc?.senderId;
+  const receiver = messageDoc?.receiverId;
+  const receiverId = receiver?._id?.toString();
+  if (!receiverId) return;
+
+  const senderName = getDisplayName(sender);
+  const preview = getMessagePreview(
+    String(messageDoc?.message || ''),
+    String(messageDoc?.messageType || 'text'),
+  );
+
+  await notifyUser(receiverId, {
+    type: 'message_received',
+    title: `New message from ${senderName}`,
+    message: preview,
+    conversationId: messageDoc.conversationId?.toString(),
+    messageId: messageDoc._id?.toString(),
+  });
+
+  if (receiver?.email) {
+    const conversationUrl = config.frontendUrl
+      ? `${config.frontendUrl}/profile/messages/${messageDoc.conversationId}`
+      : '';
+    const html = `
+      <p>Hello ${receiver.firstName || 'there'},</p>
+      <p>You have a new JetSet Cares message from <strong>${senderName}</strong>.</p>
+      <p>${preview}</p>
+      ${
+        conversationUrl
+          ? `<p><a href="${conversationUrl}">Open your JetSet Cares inbox</a></p>`
+          : '<p>Please log in to your JetSet Cares account to reply.</p>'
+      }
+    `;
+    await sendMailer(receiver.email, `New JetSet Cares message from ${senderName}`, html);
+  }
+};
 
 const sendMessage = async (
   conversationId: string,
@@ -31,8 +83,12 @@ const sendMessage = async (
 
   // Populate sender and receiver details
   const populatedMessage = await Message.findById(newMessage._id)
-    .populate('senderId', 'firstName lastName profileImage role service')
-    .populate('receiverId', 'firstName lastName profileImage role service');
+    .populate('senderId', 'firstName lastName email profileImage role service')
+    .populate('receiverId', 'firstName lastName email profileImage role service');
+
+  sendMessageAlerts(populatedMessage).catch((error) => {
+    console.error('Message notification/email failed:', error);
+  });
 
   return populatedMessage;
 };

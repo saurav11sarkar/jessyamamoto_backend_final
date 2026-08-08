@@ -6,5 +6,7 @@ export interface INotification {
   title: string;
   message: string;
   bookingId?: Types.ObjectId;
+  conversationId?: Types.ObjectId;
+  messageId?: Types.ObjectId;
   read?: boolean;
 }
