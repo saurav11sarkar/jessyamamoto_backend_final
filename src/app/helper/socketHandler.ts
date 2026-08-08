@@ -7,7 +7,7 @@ interface MessageData {
   senderId: string;
   receiverId: string;
   message: string;
-  messageType: 'text' | 'image' | 'file' | 'audio';
+  messageType: 'text' | 'image' | 'file' | 'audio' | 'gif';
   attachments?: string[];
 }
 

@@ -116,9 +116,11 @@ const loginUser = async (payload: Partial<IUser>) => {
 
   if (user.role === userRole['find job']) {
     if (user.userStatus !== 'approved') {
+      const displayStatus =
+        user.userStatus === 'panding' ? 'Pending' : user.userStatus;
       throw new AppError(
         403,
-        `Your provider account is not approved by admin yet. Status: ${user.userStatus}`,
+        `Your provider account is not approved by admin yet. Status: ${displayStatus}`,
       );
     }
   }
