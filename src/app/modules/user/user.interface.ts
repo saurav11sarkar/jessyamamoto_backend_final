@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { Types } from 'mongoose';
 import { IUserLanguage } from './user.language.util';
 
@@ -74,3 +75,81 @@ export interface IUser {
   onboardingSource?: string;
   referralCode?: string;
 }
+=======
+import { Types } from 'mongoose';
+import { IUserLanguage } from './user.language.util';
+
+export type { IUserLanguage, LanguageProficiency } from './user.language.util';
+export { LANGUAGE_PROFICIENCY_LEVELS } from './user.language.util';
+
+export interface IUser {
+  firstName: string;
+  lastName?: string;
+  email: string;
+  password: string;
+  role: 'find job' | 'find care' | 'admin' | 'ambassador';
+  roles?: Array<'find job' | 'find care' | 'admin' | 'ambassador'>;
+  profileImage?: string | string[];
+  bio?: string;
+  phone?: string;
+  location?: string;
+  lng?: number;
+  lat?: number;
+  otp?: string;
+  otpExpiry?: Date;
+  verified?: boolean;
+  isSubscription?: boolean;
+  subscription?: Types.ObjectId;
+  subscriptionExpiry?: Date;
+  zip: string;
+  hourRate?: number;
+  days?: string[];
+  needCare?: string;
+  kindOfCare?: string;
+  typeOfCare?: string[];
+  needToHelpWith?: string[];
+  caregiverQualities?: string[];
+  NIDNumber: string;
+  countery: string;
+  city: string;
+  // job
+  status?: 'active' | 'inactive';
+  gender?: 'male' | 'female' | 'other';
+  experienceLevel?: 'beginner' | 'intermediate' | 'expert';
+  userStatus?: 'approved' | 'reject' | 'pending' | 'panding';
+  category?: Types.ObjectId[];
+  service?: Types.ObjectId[];
+  totalBooking?: Types.ObjectId[];
+  completeBooking?: Types.ObjectId[];
+  cencleBooking?: Types.ObjectId[];
+  reviewRatting?: Types.ObjectId[];
+  givenReviewRatting?: Types.ObjectId[];
+  exprience?: number;
+  /** Find care: selected experience entries (titles from /experience API). */
+  experiences?: string[];
+  language?: IUserLanguage[];
+  agegroup?: string[];
+  languageLavel?: string;
+  education?: string[];
+  canHelpWith?: string[];
+  professionalSkill?: string[];
+  perferences?: string[];
+  /** Find care: uploaded certification document image URLs. */
+  galary?: string[];
+  certifications?: string[];
+  badges?: Array<{
+    badge: Types.ObjectId;
+    awardedBy?: Types.ObjectId;
+    verified?: boolean;
+    validThrough?: Date;
+    note?: string;
+    awardedAt?: Date;
+    revokedAt?: Date;
+  }>;
+  neighborhoods?: string;
+  ambassadorId?: string;
+  onboardedBy?: Types.ObjectId;
+  onboardingSource?: string;
+  referralCode?: string;
+}
+>>>>>>> d4f74793a1be02d33ff71626557e08c2d4b58f9e
