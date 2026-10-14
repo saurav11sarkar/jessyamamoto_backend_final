@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import { Types } from 'mongoose';
 
 export interface IMessage {
@@ -15,21 +14,3 @@ export interface IMessage {
   createdAt: Date;
   updatedAt: Date;
 }
-=======
-import { Types } from 'mongoose';
-
-export interface IMessage {
-  _id: Types.ObjectId;
-  conversationId: Types.ObjectId;
-  senderId: Types.ObjectId;
-  receiverId: Types.ObjectId;
-  message: string;
-  messageType: 'text' | 'image' | 'file' | 'audio' | 'gif';
-  read: boolean;
-  deletedBy: Types.ObjectId[]; // Array of user IDs who deleted the message
-  edited: boolean;
-  attachments?: string[]; // Array of file URLs
-  createdAt: Date;
-  updatedAt: Date;
-}
->>>>>>> d4f74793a1be02d33ff71626557e08c2d4b58f9e
