@@ -49,39 +49,21 @@ const standardPlans: ISubscription[] = [
 ];
 
 const normalizeDefaultSubscriptions = async () => {
-  const quarterly = await Subscription.findOne({ type: 'quarterly' });
-  const sixMonth = await Subscription.findOne({ type: '6month' });
-
-  if (quarterly && !sixMonth) {
-    await Subscription.findByIdAndUpdate(quarterly._id, {
-      type: '6month',
-      title: '6-Month Membership',
-      price: 129.99,
-      bookingFeePercent: 12.5,
-      bookingFeeMinimum: 3,
-      description:
-        '6-month member savings for families who book while traveling.',
-      content:
-        '12.5% Trusted Booking Fee, $3 minimum booking fee, Save compared with six monthly payments, Six-month billing',
-    });
-  }
+  const now = new Date();
 
   await Promise.all(
     standardPlans.map((plan) =>
       Subscription.findOneAndUpdate(
         { type: plan.type },
         {
-          $setOnInsert: plan,
-          $set: {
-            title: plan.title,
-            price: plan.price,
-            bookingFeePercent: plan.bookingFeePercent,
-            bookingFeeMinimum: plan.bookingFeeMinimum,
-            description: plan.description,
-            content: plan.content,
+          $setOnInsert: {
+            ...plan,
+            createdAt: now,
+            updatedAt: now,
           },
         },
-        { upsert: true, new: true, setDefaultsOnInsert: true },
+        // Existing plans, including their timestamps, must remain unchanged.
+        { upsert: true, new: true, setDefaultsOnInsert: true, timestamps: false },
       ),
     ),
   );
